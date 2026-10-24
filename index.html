@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Farm Mouse</title>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="hud">
+      <div class="hud-row">
+        <div id="lives" class="panel"></div>
+        <div id="food" class="panel"></div>
+        <div id="cat-status" class="panel"></div>
+      </div>
+      <div id="hidden-indicator" class="panel">Hidden</div>
+      <div id="stamina" class="panel">
+        <div class="label">Stamina</div>
+        <div class="bar"><div id="stamina-fill"></div></div>
+      </div>
+      <div id="toast"></div>
+    </div>
+
+    <div id="overlay">
+      <div class="card">
+        <h1 id="overlay-title">Farm Mouse</h1>
+        <p id="overlay-text"></p>
+        <div class="controls">
+          <div><kbd>W A S D</kbd> move</div>
+          <div><kbd>Mouse</kbd> look</div>
+          <div><kbd>Shift</kbd> sprint (noisy!)</div>
+          <div><kbd>Space</kbd> jump</div>
+          <div><kbd>Esc</kbd> pause</div>
+        </div>
+        <p class="hint" id="overlay-hint">Click to play</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
