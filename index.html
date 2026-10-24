@@ -10,6 +10,7 @@
 
     <div id="hud">
       <div class="hud-row">
+        <div id="level-name" class="panel"></div>
         <div id="lives" class="panel"></div>
         <div id="food" class="panel"></div>
         <div id="cat-status" class="panel"></div>
@@ -20,20 +21,33 @@
         <div class="bar"><div id="stamina-fill"></div></div>
       </div>
       <div id="toast"></div>
+      <canvas id="radar" width="320" height="320"></canvas>
     </div>
 
     <div id="overlay">
       <div class="card">
         <h1 id="overlay-title">Farm Mouse</h1>
         <p id="overlay-text"></p>
-        <div class="controls">
+        <div id="overlay-buttons"></div>
+        <div class="controls keys">
           <div><kbd>W A S D</kbd> move</div>
           <div><kbd>Mouse</kbd> look</div>
           <div><kbd>Shift</kbd> sprint (noisy!)</div>
           <div><kbd>Space</kbd> jump</div>
           <div><kbd>Esc</kbd> pause</div>
+          <div><kbd>V</kbd> camera view</div>
         </div>
-        <p class="hint" id="overlay-hint">Click to play</p>
+        <div class="controls pad">
+          <div><kbd>Left stick</kbd> move (tilt gently to creep)</div>
+          <div><kbd>Right stick</kbd> look</div>
+          <div><kbd>LT</kbd> / <kbd>L3</kbd> sprint (noisy!)</div>
+          <div><kbd>A</kbd> jump</div>
+          <div><kbd>Start</kbd> pause</div>
+          <div><kbd>Y</kbd> camera view</div>
+          <div><kbd>D-pad</kbd> <kbd>A</kbd> <kbd>B</kbd> menus</div>
+        </div>
+        <p class="pad-hint" id="pad-hint">&#127918; Using an Xbox controller? Press any button on it.</p>
+        <p class="hint" id="overlay-hint"></p>
       </div>
     </div>
 

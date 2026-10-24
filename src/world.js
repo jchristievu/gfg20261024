@@ -1,42 +1,12 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { texture, texturedMat } from './textures.js';
+import { addWind } from './effects.js';
+import { bladeGeometry } from './decor.js';
+import { mat, FOOD_MODELS } from './builders.js';
+import { Mousetrap } from './traps.js';
 
-const HALF = CONFIG.world.size / 2;
-
-const COLORS = {
-  ground: 0x6fae4a,
-  path: 0xb59a6a,
-  barn: 0xa8322d,
-  trim: 0xf2efe6,
-  roof: 0x4a3b36,
-  house: 0xe8dcc4,
-  houseRoof: 0x5a6b7a,
-  stone: 0x8d8a85,
-  hay: 0xe3c35a,
-  crate: 0x9c6b3c,
-  wood: 0x7a5534,
-  trough: 0x6d7c86,
-  leaves: 0x3f8a3a,
-  silo: 0xb8bcc0,
-  tractor: 0x2f8f3a,
-  tire: 0x222222,
-  cheese: 0xffd23f,
-};
-
-function mat(color, extra = {}) {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
-}
-
-function roofGeometry(width, height, depth) {
-  const shape = new THREE.Shape();
-  shape.moveTo(-width / 2, 0);
-  shape.lineTo(width / 2, 0);
-  shape.lineTo(0, height);
-  shape.closePath();
-  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
-  geo.translate(0, 0, -depth / 2);
-  return geo;
-}
+const E = CONFIG.enemy;
 
 // 2D segment vs axis-aligned rectangle (slab test). Returns entry t in [0,1] or null.
 function segmentHitsRect(ax, az, bx, bz, minX, maxX, minZ, maxZ) {
@@ -61,27 +31,41 @@ function segmentHitsRect(ax, az, bx, bz, minX, maxX, minZ, maxZ) {
   return t0;
 }
 
+// The play space for one level: collision, hiding spots, food, home and traps.
+// Level files (src/levels/) lay out the geometry using the builders below.
 export class World {
-  constructor(scene) {
+  constructor(scene, level) {
     this.scene = scene;
+    this.level = level;
     // Collision volumes: { minX, maxX, minZ, maxZ, top, bottom?, catOnly? }.
-    // `bottom` > 0 makes a roof the mouse can walk under; `catOnly` volumes block just the cat.
+    // `bottom` > 0 makes a roof/furniture the mouse can walk under; `catOnly`
+    // volumes block only enemies.
     this.boxes = [];
-    this.grassPatches = []; // { x, z, r, material }
+    this.grassPatches = []; // round hiding spots: { x, z, r, material }
+    this.hideZones = []; // rectangular hiding spots, e.g. under the sofa
     this.cardboardBoxes = []; // { x, z, openX, openZ, inner, entrance }
     this.puddles = []; // { x, z, r }
+    this.traps = [];
     this.cameraBlockers = []; // meshes the camera should not clip through
-    this.cheeses = [];
-    this.droppedFood = []; // cheese dropped by the mouse (e.g. jumping into a puddle)
+    this.foodItems = [];
+    this.droppedFood = []; // food dropped by the mouse (e.g. jumping into a puddle)
+    this.paths = []; // [x1, z1, x2, z2, width] for decoration placement
+    this.rippleTimer = 0;
     this.foodCount = 0;
     this.time = 0;
 
-    this.home = new THREE.Vector3(-40, 0, 42.8);
-    this.mouseSpawn = new THREE.Vector3(-40, 0, 42.5);
-    this.foodSpot = new THREE.Vector3(36, 0, -31);
-    this.catSpawn = new THREE.Vector3(0, 0, 16);
+    this.halfX = level.size[0] / 2;
+    this.halfZ = level.size[1] / 2;
+    this.home = new THREE.Vector3(...level.home);
+    this.mouseSpawn = new THREE.Vector3(...level.mouseSpawn);
+    this.foodSpot = new THREE.Vector3(...level.foodSpot);
+    this.foodToWin = level.foodToWin ?? CONFIG.game.foodToWin;
+    this.makeFoodMesh = FOOD_MODELS[level.food];
 
-    this.build();
+    this.buildBounds();
+    level.build(this);
+    this.buildHomeMarker(level.nestColor);
+    this.buildFood();
   }
 
   // ---------------------------------------------------------------- building
@@ -92,140 +76,91 @@ export class World {
     return box;
   }
 
-  addBox(x, z, w, d, h, color, { blocksCamera = false, collide = true } = {}) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
-    mesh.position.set(x, h / 2, z);
+  addBox(x, z, w, d, h, colorOrMaterial, { blocksCamera = false, collide = true, y = 0 } = {}) {
+    const material = colorOrMaterial instanceof THREE.Material ? colorOrMaterial : mat(colorOrMaterial);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set(x, y + h / 2, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
-    if (collide) this.addCollider(x, z, w, d, h);
+    if (collide) this.addCollider(x, z, w, d, y + h, y > 0 ? { bottom: y } : {});
     if (blocksCamera) this.cameraBlockers.push(mesh);
     return mesh;
   }
 
-  build() {
-    this.buildGround();
-    this.buildPerimeter();
-    this.buildHome();
-    this.buildFood();
-    this.buildBarn(-4, 1);
-    this.buildFarmhouse(38, -42);
-    this.buildSilo(10, -14);
-    this.buildTractor(18, 9.5);
-
-    // Hay bales: [x, z, w, d, h]. The two at -6,14 form a staircase.
-    const bales = [
-      [-30, 38, 2, 1.2, 0.9],
-      [-14, 36, 1.2, 2, 0.9],
-      [-6, 14, 2, 1.2, 1.8],
-      [-6, 15.2, 2, 1.2, 0.9],
-      [14, -22, 2, 1.2, 0.9],
-      [26, 4, 2, 1.2, 0.9],
-    ];
-    for (const [x, z, w, d, h] of bales) this.addBox(x, z, w, d, h, COLORS.hay);
-
-    // Cardboard boxes: [x, z, open side] where open side is 0:+z 1:+x 2:-z 3:-x.
-    const cardboard = [
-      [-24, 22, 3],
-      [8, -4, 0],
-      [22, -28, 3],
-      [-16, -2, 1],
-    ];
-    for (const [x, z, side] of cardboard) this.buildCardboardBox(x, z, side);
-
-    const puddles = [
-      [-20, 4, 2.5],
-      [26, -2, 3],
-    ];
-    for (const [x, z, r] of puddles) this.buildPuddle(x, z, r);
-
-    const crates = [
-      [20, -12],
-      [21.4, -12],
-      [30, -26],
-      [-34, 8],
-      [4, 30],
-    ];
-    for (const [x, z] of crates) this.addBox(x, z, 1.4, 1.4, 1.5, COLORS.crate);
-
-    this.addBox(-14, 24, 4, 1.2, 0.7, COLORS.trough);
-
-    this.buildFence(-30, -20, -30, 8);
-    this.buildFence(6, 15, 30, 15);
-
-    const trees = [
-      [-44, 0],
-      [-20, -36],
-      [44, 10],
-      [0, 40],
-      [26, 36],
-      [-44, -44],
-    ];
-    for (const [x, z] of trees) this.buildTree(x, z);
-
-    const grass = [
-      [-34, 34, 3],
-      [-26, 28, 3.5],
-      [-36, 18, 3],
-      [-20, 32, 2.5],
-      [-22, 14, 3.5],
-      [-12, 20, 3],
-      [2, 24, 3],
-      [-28, 0, 3.5],
-      [-18, -12, 3],
-      [12, 2, 3],
-      [20, -4, 3.5],
-      [4, -26, 3],
-      [24, -18, 3],
-      [32, -10, 2.5],
-      [40, -22, 2.5],
-      [16, -36, 3],
-      [-4, -20, 3.5],
-      [28, 24, 4],
-      [-38, -30, 4],
-      [40, 30, 4],
-    ];
-    for (const [x, z, r] of grass) this.buildGrassPatch(x, z, r);
+  // Trim board (thin box) added to a parent, for corners, frames and the like.
+  trim(parent, w, h, d, x, y, z, material) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    parent.add(mesh);
+    return mesh;
   }
 
-  buildGround() {
+  // Invisible walls just outside the level's bounds.
+  buildBounds() {
+    const t = 2;
+    const { halfX: hx, halfZ: hz } = this;
+    this.addCollider(0, -hz - t / 2, hx * 2 + 2 * t, t, 20);
+    this.addCollider(0, hz + t / 2, hx * 2 + 2 * t, t, 20);
+    this.addCollider(-hx - t / 2, 0, t, hz * 2, 20);
+    this.addCollider(hx + t / 2, 0, t, hz * 2, 20);
+  }
+
+  // A big textured ground plane with low-frequency color variation to hide tiling.
+  buildGroundPlane(textureName, { size = 900, tile = 6, tint = 0xffffff, y = 0, roughness = 1 } = {}) {
+    const geo = new THREE.PlaneGeometry(size, size, Math.min(150, Math.ceil(size / 6)), Math.min(150, Math.ceil(size / 6)));
+    const pos = geo.attributes.position;
+    const colors = [];
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getY(i);
+      const n = Math.sin(x * 0.07 + Math.sin(z * 0.05) * 2) * 0.5 + Math.sin(z * 0.11 - x * 0.03) * 0.3 + Math.sin((x + z) * 0.23) * 0.2;
+      const light = 1 + n * 0.1;
+      colors.push(light * (1 + n * 0.04), light, light * (1 - n * 0.06));
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(CONFIG.world.size + 40, CONFIG.world.size + 40),
-      mat(COLORS.ground),
+      geo,
+      texturedMat(textureName, size / tile, size / tile, { roughness, vertexColors: true, color: tint }),
     );
     ground.rotation.x = -Math.PI / 2;
+    ground.position.y = y;
     ground.receiveShadow = true;
     this.scene.add(ground);
-
-    // Dirt paths loosely connecting home, barn and farmhouse.
-    this.addPath(-40, 40, -10, 12, 3);
-    this.addPath(-10, 12, 8, 12, 3);
-    this.addPath(8, 12, 24, -24, 3);
-    this.addPath(24, -24, 36, -32, 3);
+    return ground;
   }
 
   addPath(x1, z1, x2, z2, width) {
-    const len = Math.hypot(x2 - x1, z2 - z1);
-    const path = new THREE.Mesh(new THREE.PlaneGeometry(width, len), mat(COLORS.path));
+    this.paths.push([x1, z1, x2, z2, width]);
+    // Extend past each end so neighboring segments overlap at the bends, and fade
+    // the ends out with vertex alpha so they don't stop in a hard line.
+    const len = Math.hypot(x2 - x1, z2 - z1) + width;
+    const geo = new THREE.PlaneGeometry(width * 1.6, len, 1, Math.ceil(len));
+    const pos = geo.attributes.position;
+    const rgba = [];
+    for (let i = 0; i < pos.count; i++) {
+      const fromEnd = len / 2 - Math.abs(pos.getY(i));
+      rgba.push(1, 1, 1, THREE.MathUtils.clamp(fromEnd / width, 0, 1));
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(rgba, 4));
+    const path = new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({
+        map: texture('path', 1, len / (width * 1.6)),
+        vertexColors: true,
+        transparent: true,
+        depthWrite: false,
+        roughness: 1,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      }),
+    );
     path.rotation.x = -Math.PI / 2;
     path.rotation.z = Math.atan2(x2 - x1, z2 - z1);
-    path.position.set((x1 + x2) / 2, 0.01, (z1 + z2) / 2);
+    path.position.set((x1 + x2) / 2, 0.01 + this.paths.length * 0.002, (z1 + z2) / 2);
     path.receiveShadow = true;
     this.scene.add(path);
-  }
-
-  buildPerimeter() {
-    // Invisible tall walls keep everyone in; a low fence shows where they are.
-    const t = 2;
-    this.addCollider(0, -HALF - t / 2, CONFIG.world.size + 2 * t, t, 10);
-    this.addCollider(0, HALF + t / 2, CONFIG.world.size + 2 * t, t, 10);
-    this.addCollider(-HALF - t / 2, 0, t, CONFIG.world.size, 10);
-    this.addCollider(HALF + t / 2, 0, t, CONFIG.world.size, 10);
-
-    this.buildFence(-HALF, -HALF, HALF, -HALF, false);
-    this.buildFence(-HALF, HALF, HALF, HALF, false);
-    this.buildFence(-HALF, -HALF, -HALF, HALF, false);
-    this.buildFence(HALF, -HALF, HALF, HALF, false);
   }
 
   buildFence(x1, z1, x2, z2, collide = true) {
@@ -235,7 +170,7 @@ export class World {
     group.position.set(x1, 0, z1);
     group.rotation.y = angle;
 
-    const woodMat = mat(COLORS.wood);
+    const woodMat = texturedMat('wood', 1, 1);
     const postCount = Math.max(2, Math.round(len / 2.5) + 1);
     const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.1, 0.2), woodMat, postCount);
     const m = new THREE.Matrix4();
@@ -246,8 +181,9 @@ export class World {
     posts.castShadow = true;
     group.add(posts);
 
+    const railMat = texturedMat('wood', len / 3, 1);
     for (const y of [0.4, 0.85]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, len), woodMat);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, len), railMat);
       rail.position.set(0, y, len / 2);
       rail.castShadow = true;
       group.add(rail);
@@ -255,62 +191,189 @@ export class World {
     this.scene.add(group);
 
     if (collide) {
-      // Fences only run along an axis on this map, so an AABB is exact.
+      // Fences only run along an axis, so an AABB is exact.
       const w = Math.abs(x2 - x1) + 0.25;
       const d = Math.abs(z2 - z1) + 0.25;
       this.addCollider((x1 + x2) / 2, (z1 + z2) / 2, w, d, 1.0);
     }
   }
 
-  buildHome() {
-    // Stone wall with a mouse hole at its base.
-    const wall = this.addBox(-40, 44.6, 12, 1.2, 2.4, COLORS.stone, { blocksCamera: true });
-    wall.material = mat(COLORS.stone, { roughness: 1 });
-
-    const hole = new THREE.Mesh(
-      new THREE.CircleGeometry(0.6, 24, 0, Math.PI),
-      new THREE.MeshBasicMaterial({ color: 0x120c08 }),
-    );
-    hole.position.set(-40, 0, 43.99);
-    hole.rotation.y = Math.PI;
-    this.scene.add(hole);
-
-    const rug = new THREE.Mesh(
-      new THREE.CylinderGeometry(CONFIG.game.homeRadius, CONFIG.game.homeRadius, 0.02, 32),
-      mat(0xa33f3f),
-    );
-    rug.position.set(this.home.x, 0.015, this.home.z);
-    rug.receiveShadow = true;
-    this.scene.add(rug);
-
-    this.homeBeacon = this.makeBeacon(0x6dff8a);
-    this.homeBeacon.position.set(this.home.x, 0, this.home.z);
+  buildTree(x, z) {
+    const rng = () => Math.abs(Math.sin(x * 12.9898 + z * 78.233 + (this._treeSeed = (this._treeSeed ?? 0) + 1)) * 43758.5453) % 1;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, 4.5, 8), texturedMat('bark', 2, 2));
+    trunk.position.set(x, 2.25, z);
+    trunk.castShadow = true;
+    this.scene.add(trunk);
+    const greens = [0x3f8a3a, 0x4d9a40, 0x357a33, 0x5aa648];
+    for (let i = 0; i < 5; i++) {
+      const r = 1.6 + rng() * 1.1;
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mat(greens[i % greens.length], { flatShading: true }));
+      const a = rng() * Math.PI * 2;
+      blob.position.set(x + Math.cos(a) * 1.3 * (i ? 1 : 0), 5.2 + rng() * 1.6 + (i ? 0 : 0.8), z + Math.sin(a) * 1.3 * (i ? 1 : 0));
+      blob.castShadow = true;
+      blob.receiveShadow = true;
+      this.scene.add(blob);
+    }
+    this.cameraBlockers.push(trunk);
+    this.addCollider(x, z, 1, 1, 6);
   }
 
-  buildFood() {
-    const { x, z } = this.foodSpot;
-    const plate = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.05, 32), mat(0xf4f4f4));
-    plate.position.set(x, 0.025, z);
-    plate.receiveShadow = true;
-    this.scene.add(plate);
+  // A box lying on its side with one end open. Built facing +z, then turned
+  // in 90-degree steps so every collider stays axis-aligned.
+  // side: 0 opens toward +z, 1 +x, 2 -z, 3 -x.
+  buildCardboardBox(x, z, side, { w = 1.6, d = 1.2, h = 0.9, material = null } = {}) {
+    const t = 0.06;
+    const angle = side * (Math.PI / 2);
+    const sin = Math.round(Math.sin(angle));
+    const cos = Math.round(Math.cos(angle));
+    const toWorld = (lx, lz) => [x + lx * cos + lz * sin, z - lx * sin + lz * cos];
+    const swap = side % 2 === 1;
 
-    // One cheese wedge per piece of food still on the plate.
-    const wedgeGeo = (this.wedgeGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.22, 3));
-    const cheeseMat = (this.cheeseMat = mat(COLORS.cheese, { roughness: 0.6 }));
-    for (let i = 0; i < CONFIG.game.foodToWin; i++) {
-      const wedge = new THREE.Mesh(wedgeGeo, cheeseMat);
-      const a = (i / CONFIG.game.foodToWin) * Math.PI * 2;
-      wedge.position.set(x + Math.cos(a) * 0.45, 0.16, z + Math.sin(a) * 0.45);
-      wedge.rotation.y = a;
-      wedge.castShadow = true;
-      this.scene.add(wedge);
-      this.cheeses.push(wedge);
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = angle;
+    const outside = material ?? texturedMat('cardboard', 1, 1);
+    const inside = mat(0x6f5236);
+
+    // [local x, local z, width, depth, bottom, top]
+    const parts = [
+      [-w / 2 + t / 2, 0, t, d, 0, h], // left wall
+      [w / 2 - t / 2, 0, t, d, 0, h], // right wall
+      [0, -d / 2 + t / 2, w, t, 0, h], // back wall
+      [0, 0, w, d, h - t, h], // roof
+    ];
+    for (const [lx, lz, pw, pd, bottom, top] of parts) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(pw, top - bottom, pd), [
+        outside, outside, outside, inside, outside, outside,
+      ]);
+      mesh.position.set(lx, (top + bottom) / 2, lz);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+
+      const [cx, cz] = toWorld(lx, lz);
+      const [cw, cd] = swap ? [pd, pw] : [pw, pd];
+      this.addCollider(cx, cz, cw, cd, top, bottom > 0 ? { bottom } : {});
     }
 
-    this.addBox(x + 2, z - 0.5, 1, 1, 1.2, 0x9b7b4f); // grain sack
+    if (!material) {
+      // Cardboard flaps folded open around the entrance.
+      const flapMat = texturedMat('cardboard', 0.5, 0.3, { color: 0xe6d3bf });
+      const top = new THREE.Mesh(new THREE.BoxGeometry(w, 0.03, 0.45), flapMat);
+      top.rotation.x = -0.5;
+      top.position.set(0, h + Math.sin(0.5) * 0.22, d / 2 + Math.cos(0.5) * 0.22);
+      group.add(top);
+      for (const s of [-1, 1]) {
+        const flap = new THREE.Mesh(new THREE.BoxGeometry(0.03, h * 0.9, 0.4), flapMat);
+        flap.rotation.y = s * 0.7;
+        flap.position.set(s * (w / 2 + Math.sin(0.7) * 0.2), h * 0.45, d / 2 + Math.cos(0.7) * 0.2);
+        group.add(flap);
+      }
+    }
+    group.traverse((o) => (o.castShadow = true));
+    this.scene.add(group);
 
-    this.foodBeacon = this.makeBeacon(0xffd23f);
-    this.foodBeacon.position.set(x, 0, z);
+    // Enemies are too big to climb on or squeeze in, so they treat the box as solid.
+    const [fw, fd] = swap ? [d, w] : [w, d];
+    this.addCollider(x, z, fw, fd, h, { catOnly: true });
+
+    const [ix, iz] = swap ? [d / 2 - t - 0.1, w / 2 - t - 0.1] : [w / 2 - t - 0.1, d / 2 - t - 0.1];
+    const reach = d / 2 + CONFIG.cats.farm.radius + 0.3;
+    this.cardboardBoxes.push({
+      x,
+      z,
+      openX: sin,
+      openZ: cos,
+      inner: { minX: x - ix, maxX: x + ix, minZ: z - iz, maxZ: z + iz },
+      entrance: new THREE.Vector3(x + sin * reach, 0, z + cos * reach),
+    });
+  }
+
+  buildPuddle(x, z, r) {
+    const mud = new THREE.Mesh(
+      new THREE.CircleGeometry(r + 0.5, 40),
+      texturedMat('dirt', r / 2, r / 2, { color: 0x8a7258, roughness: 0.7 }),
+    );
+    mud.rotation.x = -Math.PI / 2;
+    mud.position.set(x, 0.015, z);
+    mud.receiveShadow = true;
+    const water = new THREE.Mesh(
+      new THREE.CircleGeometry(r, 48),
+      new THREE.MeshStandardMaterial({
+        color: 0x3f6f9a,
+        roughness: 0.04,
+        metalness: 0.25,
+        transparent: true,
+        opacity: 0.88,
+        envMapIntensity: 1.6,
+      }),
+    );
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(x, 0.03, z);
+    water.receiveShadow = true;
+    this.scene.add(mud, water);
+    this.puddles.push({ x, z, r });
+
+    // A few reeds around the bank.
+    const reedMat = mat(0x5d7a35);
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + Math.sin(x + i) * 0.4;
+      const reed = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.8 + (i % 3) * 0.3, 4), reedMat);
+      reed.position.set(x + Math.cos(a) * (r + 0.3), 0.45, z + Math.sin(a) * (r + 0.3));
+      reed.rotation.z = Math.sin(i * 3.1) * 0.2;
+      reed.castShadow = true;
+      this.scene.add(reed);
+    }
+  }
+
+  // Round patch of tall blades the mouse can hide in: grass, weeds or loose straw.
+  buildGrassPatch(x, z, r, { hue = 0.25, hueRange = 0.06, sat = 0.55, light = 0.28, height = 0.9, wind = 0.12 } = {}) {
+    const count = Math.floor(r * r * 22);
+    const material = addWind(
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.9,
+        transparent: true,
+        vertexColors: true,
+        side: THREE.DoubleSide,
+      }),
+      wind,
+    );
+    const mesh = new THREE.InstancedMesh(bladeGeometry(0.16), material, count);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const s = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const c = new THREE.Color();
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.sqrt(Math.random()) * r;
+      p.set(x + Math.cos(a) * d, 0, z + Math.sin(a) * d);
+      e.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI, (Math.random() - 0.5) * 0.3);
+      q.setFromEuler(e);
+      s.set(1, height + Math.random() * 0.6, 1);
+      m.compose(p, q, s);
+      mesh.setMatrixAt(i, m);
+      c.setHSL(hue + Math.random() * hueRange, sat, light + Math.random() * 0.12);
+      mesh.setColorAt(i, c);
+    }
+    mesh.castShadow = true;
+    this.scene.add(mesh);
+    this.grassPatches.push({ x, z, r, material });
+  }
+
+  // Rectangular hiding spot (under furniture and the like). The furniture's own
+  // colliders keep enemies out; this just marks where the mouse counts as hidden.
+  addHideZone(minX, maxX, minZ, maxZ) {
+    this.hideZones.push({ minX, maxX, minZ, maxZ });
+  }
+
+  addTrap(x, z, angle = 0) {
+    const trap = new Mousetrap(x, z, angle);
+    this.scene.add(trap.group);
+    this.traps.push(trap);
+    return trap;
   }
 
   makeBeacon(color) {
@@ -329,230 +392,52 @@ export class World {
     return beacon;
   }
 
-  buildBarn(x, z) {
-    const w = 16;
-    const d = 14;
-    const h = 8;
-    this.addBox(x, z, w, d, h, COLORS.barn, { blocksCamera: true });
-    const roof = new THREE.Mesh(roofGeometry(w + 1, 4, d + 1), mat(COLORS.roof));
-    roof.position.set(x, h, z);
-    roof.castShadow = true;
-    this.scene.add(roof);
-    this.cameraBlockers.push(roof);
-
-    // Big doors facing +z with white X trim.
-    const door = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 0.1), mat(0x8a2622));
-    door.position.set(x, 2.5, z + d / 2 + 0.05);
-    this.scene.add(door);
-    const trimMat = mat(COLORS.trim);
-    for (const dir of [1, -1]) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.3, 0.12), trimMat);
-      bar.position.copy(door.position);
-      bar.position.z += 0.02;
-      bar.rotation.z = dir * Math.atan2(5, 6);
-      this.scene.add(bar);
-    }
-  }
-
-  buildFarmhouse(x, z) {
-    const w = 16;
-    const d = 12;
-    const h = 7;
-    this.addBox(x, z, w, d, h, COLORS.house, { blocksCamera: true });
-    const roof = new THREE.Mesh(roofGeometry(d + 1, 3.5, w + 1), mat(COLORS.houseRoof));
-    roof.rotation.y = Math.PI / 2;
-    roof.position.set(x, h, z);
-    roof.castShadow = true;
-    this.scene.add(roof);
-    this.cameraBlockers.push(roof);
-
-    const door = new THREE.Mesh(new THREE.BoxGeometry(2, 3.2, 0.1), mat(0x5a3d26));
-    door.position.set(x - 2, 1.6, z + d / 2 + 0.05);
-    this.scene.add(door);
-    for (const wx of [-6, 3, 6]) {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 0.1), mat(0x9fd3f0, { roughness: 0.2 }));
-      win.position.set(x + wx, 4.5, z + d / 2 + 0.05);
-      this.scene.add(win);
-    }
-  }
-
-  buildSilo(x, z) {
-    const r = 3;
-    const h = 12;
-    const silo = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 24), mat(COLORS.silo, { metalness: 0.3 }));
-    silo.position.set(x, h / 2, z);
-    silo.castShadow = true;
-    this.scene.add(silo);
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x8e9296));
-    dome.position.set(x, h, z);
-    this.scene.add(dome);
-    this.cameraBlockers.push(silo);
-    this.addCollider(x, z, r * 2, r * 2, h);
-  }
-
-  buildTractor(x, z) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(4, 1.2, 2), mat(COLORS.tractor));
-    body.position.y = 1.1;
-    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 1.8), mat(COLORS.tractor));
-    cab.position.set(-0.9, 2.3, 0);
-    group.add(body, cab);
-    const tireMat = mat(COLORS.tire);
-    const wheels = [
-      [-1.2, 0.8, 1.1],
-      [-1.2, 0.8, -1.1],
-      [1.4, 0.5, 1.05],
-      [1.4, 0.5, -1.05],
-    ];
-    for (const [wx, r, wz] of wheels) {
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.4, 16), tireMat);
-      wheel.rotation.x = Math.PI / 2;
-      wheel.position.set(wx, r, wz);
-      group.add(wheel);
-    }
-    group.traverse((o) => (o.castShadow = true));
-    this.scene.add(group);
-    this.cameraBlockers.push(body, cab);
-    this.addCollider(x, z, 4, 3, 2.2);
-  }
-
-  buildTree(x, z) {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 4, 10), mat(COLORS.wood));
-    trunk.position.set(x, 2, z);
-    trunk.castShadow = true;
-    const leaves = new THREE.Mesh(new THREE.SphereGeometry(2.6, 14, 10), mat(COLORS.leaves));
-    leaves.position.set(x, 5.2, z);
-    leaves.castShadow = true;
-    this.scene.add(trunk, leaves);
-    this.cameraBlockers.push(trunk);
-    this.addCollider(x, z, 1, 1, 6);
-  }
-
-  // A box lying on its side with one end open. Built facing +z, then turned
-  // in 90-degree steps so every collider stays axis-aligned.
-  buildCardboardBox(x, z, side) {
-    const w = 1.6;
-    const d = 1.2;
-    const h = 0.9;
-    const t = 0.06;
-    const angle = side * (Math.PI / 2);
-    const sin = Math.round(Math.sin(angle));
-    const cos = Math.round(Math.cos(angle));
-    const toWorld = (lx, lz) => [x + lx * cos + lz * sin, z - lx * sin + lz * cos];
-    const swap = side % 2 === 1;
-
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-    group.rotation.y = angle;
-    const cardboard = mat(0xc49a6c);
-    const inside = mat(0x8a6a48);
-
-    // [local x, local z, width, depth, bottom, top]
-    const parts = [
-      [-w / 2 + t / 2, 0, t, d, 0, h], // left wall
-      [w / 2 - t / 2, 0, t, d, 0, h], // right wall
-      [0, -d / 2 + t / 2, w, t, 0, h], // back wall
-      [0, 0, w, d, h - t, h], // roof
-    ];
-    for (const [lx, lz, pw, pd, bottom, top] of parts) {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(pw, top - bottom, pd), [
-        cardboard, cardboard, cardboard, inside, cardboard, cardboard,
-      ]);
-      mesh.position.set(lx, (top + bottom) / 2, lz);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      group.add(mesh);
-
-      const [cx, cz] = toWorld(lx, lz);
-      const [cw, cd] = swap ? [pd, pw] : [pw, pd];
-      this.addCollider(cx, cz, cw, cd, top, bottom > 0 ? { bottom } : {});
-    }
-
-    // Flaps folded open around the entrance.
-    const flapMat = mat(0xb88d60);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(w, 0.03, 0.45), flapMat);
-    top.rotation.x = -0.5;
-    top.position.set(0, h + Math.sin(0.5) * 0.22, d / 2 + Math.cos(0.5) * 0.22);
-    group.add(top);
-    for (const s of [-1, 1]) {
-      const flap = new THREE.Mesh(new THREE.BoxGeometry(0.03, h * 0.9, 0.4), flapMat);
-      flap.rotation.y = s * 0.7;
-      flap.position.set(s * (w / 2 + Math.sin(0.7) * 0.2), h * 0.45, d / 2 + Math.cos(0.7) * 0.2);
-      group.add(flap);
-    }
-    group.traverse((o) => (o.castShadow = true));
-    this.scene.add(group);
-
-    // The cat is too big to climb on or squeeze in, so it treats the box as solid.
-    const [fw, fd] = swap ? [d, w] : [w, d];
-    this.addCollider(x, z, fw, fd, h, { catOnly: true });
-
-    const [ix, iz] = swap ? [d / 2 - t - 0.1, w / 2 - t - 0.1] : [w / 2 - t - 0.1, d / 2 - t - 0.1];
-    const reach = d / 2 + CONFIG.cat.radius + 0.25;
-    this.cardboardBoxes.push({
-      x,
-      z,
-      openX: sin,
-      openZ: cos,
-      inner: { minX: x - ix, maxX: x + ix, minZ: z - iz, maxZ: z + iz },
-      entrance: new THREE.Vector3(x + sin * reach, 0, z + cos * reach),
-    });
-  }
-
-  buildPuddle(x, z, r) {
-    const mud = new THREE.Mesh(new THREE.CircleGeometry(r + 0.35, 40), mat(0x6b5236));
-    mud.rotation.x = -Math.PI / 2;
-    mud.position.set(x, 0.015, z);
-    mud.receiveShadow = true;
-    const water = new THREE.Mesh(
-      new THREE.CircleGeometry(r, 40),
-      new THREE.MeshStandardMaterial({ color: 0x4f7fae, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.85 }),
+  // Nest disc marking the safe zone, plus the "bring it home" beacon.
+  buildHomeMarker(color = 0xb8a070) {
+    const nest = new THREE.Mesh(
+      new THREE.CylinderGeometry(CONFIG.game.homeRadius, CONFIG.game.homeRadius + 0.1, 0.03, 32),
+      texturedMat('straw', 3, 3, { color }),
     );
-    water.rotation.x = -Math.PI / 2;
-    water.position.set(x, 0.03, z);
-    water.receiveShadow = true;
-    this.scene.add(mud, water);
-    this.puddles.push({ x, z, r });
+    nest.position.set(this.home.x, 0.02, this.home.z);
+    nest.receiveShadow = true;
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(CONFIG.game.homeRadius, 0.06, 5, 32),
+      texturedMat('straw', 8, 1, { color: new THREE.Color(color).multiplyScalar(0.9) }),
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.position.set(this.home.x, 0.06, this.home.z);
+    rim.receiveShadow = true;
+    this.scene.add(nest, rim);
+
+    this.homeBeacon = this.makeBeacon(0x6dff8a);
+    this.homeBeacon.position.set(this.home.x, 0, this.home.z);
   }
 
-  buildGrassPatch(x, z, r) {
-    const count = Math.floor(r * r * 14);
-    const blade = new THREE.ConeGeometry(0.09, 1, 4);
-    blade.translate(0, 0.5, 0);
-    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true });
-    const mesh = new THREE.InstancedMesh(blade, material, count);
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const e = new THREE.Euler();
-    const s = new THREE.Vector3();
-    const p = new THREE.Vector3();
-    const c = new THREE.Color();
-    for (let i = 0; i < count; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const d = Math.sqrt(Math.random()) * r;
-      p.set(x + Math.cos(a) * d, 0, z + Math.sin(a) * d);
-      e.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI, (Math.random() - 0.5) * 0.3);
-      q.setFromEuler(e);
-      const height = 0.9 + Math.random() * 0.6;
-      s.set(1, height, 1);
-      m.compose(p, q, s);
-      mesh.setMatrixAt(i, m);
-      c.setHSL(0.25 + Math.random() * 0.06, 0.55, 0.28 + Math.random() * 0.12);
-      mesh.setColorAt(i, c);
+  // One food item per piece still to collect, arranged around the food spot.
+  // The level draws whatever it sits on (plate, jar, sack).
+  buildFood() {
+    const { x, z } = this.foodSpot;
+    for (let i = 0; i < this.foodToWin; i++) {
+      const item = this.makeFoodMesh();
+      const a = (i / this.foodToWin) * Math.PI * 2;
+      item.position.set(x + Math.cos(a) * 0.45, 0.16, z + Math.sin(a) * 0.45);
+      item.rotation.y = a;
+      item.traverse((o) => (o.castShadow = true));
+      this.scene.add(item);
+      this.foodItems.push(item);
     }
-    mesh.castShadow = true;
-    this.scene.add(mesh);
-    this.grassPatches.push({ x, z, r, material });
+    this.foodBeacon = this.makeBeacon(0xffd23f);
+    this.foodBeacon.position.set(x, 0, z);
   }
 
   // ------------------------------------------------------------------ queries
 
-  // Highest walkable surface under (x, z) that is at or below maxY.
-  groundHeightAt(x, z, maxY = Infinity) {
+  // Highest walkable surface under (x, z) that is at or below maxY. `solidOnly`
+  // skips raised things (seats, roofs) that an enemy would walk under instead.
+  groundHeightAt(x, z, maxY = Infinity, solidOnly = false) {
     let h = 0;
     for (const b of this.boxes) {
-      if (b.catOnly) continue;
+      if (b.catOnly || (solidOnly && b.bottom)) continue;
       if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && b.top <= maxY && b.top > h) {
         h = b.top;
       }
@@ -599,21 +484,23 @@ export class World {
     }
   }
 
-  isTallForCat(box) {
-    return box.catOnly || box.top > CONFIG.cat.jumpHeight;
+  // Does this volume stop an enemy? They hop onto anything low, walk under
+  // anything high, and can't enter cardboard boxes.
+  blocksEnemy(box) {
+    if ((box.bottom ?? 0) >= E.clearance) return false;
+    return box.catOnly || box.top > E.jumpHeight;
   }
 
-  // Round areas the cat won't enter: the mouse hole and the puddles.
-  catKeepOuts(radius) {
-    return [
-      { x: this.home.x, z: this.home.z, r: CONFIG.game.homeRadius + radius + 0.2 },
-      ...this.puddles.map((p) => ({ x: p.x, z: p.z, r: p.r + radius * 0.3 })),
-    ];
+  // Round areas enemies won't enter: the mouse hole, and puddles for those that hate water.
+  keepOuts(radius, avoidWater) {
+    const zones = [{ x: this.home.x, z: this.home.z, r: CONFIG.game.homeRadius + radius + 0.2 }];
+    if (avoidWater) for (const p of this.puddles) zones.push({ x: p.x, z: p.z, r: p.r + radius * 0.3 });
+    return zones;
   }
 
-  resolveCat(pos, radius) {
-    this.resolveCircle(pos, radius, (b) => this.isTallForCat(b));
-    for (const k of this.catKeepOuts(radius)) {
+  resolveEnemy(pos, radius, avoidWater = true) {
+    this.resolveCircle(pos, radius, (b) => this.blocksEnemy(b));
+    for (const k of this.keepOuts(radius, avoidWater)) {
       const dx = pos.x - k.x;
       const dz = pos.z - k.z;
       const d = Math.hypot(dx, dz);
@@ -624,30 +511,27 @@ export class World {
     }
   }
 
-  isValidCatPoint(x, z, radius) {
-    if (Math.abs(x) > HALF - 1 || Math.abs(z) > HALF - 1) return false;
-    for (const k of this.catKeepOuts(radius)) {
+  isValidEnemyPoint(x, z, radius, avoidWater = true) {
+    if (Math.abs(x) > this.halfX - 1 || Math.abs(z) > this.halfZ - 1) return false;
+    for (const k of this.keepOuts(radius, avoidWater)) {
       if (Math.hypot(x - k.x, z - k.z) < k.r + 0.3) return false;
     }
     for (const b of this.boxes) {
-      if (!this.isTallForCat(b)) continue;
+      if (!this.blocksEnemy(b)) continue;
       if (x > b.minX - radius && x < b.maxX + radius && z > b.minZ - radius && z < b.maxZ + radius) return false;
     }
     return true;
   }
 
   // Next point to walk toward on the way to `to`, detouring around the first
-  // tall obstacle in the way. Cheap stand-in for real pathfinding.
+  // obstacle in the way. Cheap stand-in for real pathfinding.
   steer(from, to, radius) {
     let hit = null;
     let hitT = Infinity;
     const inset = radius - 0.05; // slightly smaller than collision so wall-sliding isn't "blocked"
     for (const b of this.boxes) {
-      if (!this.isTallForCat(b)) continue;
-      const t = segmentHitsRect(
-        from.x, from.z, to.x, to.z,
-        b.minX - inset, b.maxX + inset, b.minZ - inset, b.maxZ + inset,
-      );
+      if (!this.blocksEnemy(b)) continue;
+      const t = segmentHitsRect(from.x, from.z, to.x, to.z, b.minX - inset, b.maxX + inset, b.minZ - inset, b.maxZ + inset);
       if (t !== null && t < hitT) {
         hit = b;
         hitT = t;
@@ -702,10 +586,10 @@ export class World {
     return new THREE.Vector3(nodes[next][0], 0, nodes[next][1]);
   }
 
-  // True if nothing taller than the cat's eye line sits between a and b.
+  // True if nothing between a and b blocks an enemy's eye line.
   hasLineOfSight(a, b) {
     for (const box of this.boxes) {
-      if (box.top <= CONFIG.cat.eyeHeight) continue;
+      if (box.top <= E.eyeHeight || (box.bottom ?? 0) >= E.eyeHeight) continue;
       // Standing on top of it (cat on a crate) doesn't block your own view.
       if (a.x >= box.minX && a.x <= box.maxX && a.z >= box.minZ && a.z <= box.maxZ) continue;
       if (segmentHitsRect(a.x, a.z, b.x, b.z, box.minX, box.maxX, box.minZ, box.maxZ) !== null) return false;
@@ -718,6 +602,10 @@ export class World {
       if (Math.hypot(x - g.x, z - g.z) < g.r - 0.2) return g;
     }
     return null;
+  }
+
+  hideZoneAt(x, z) {
+    return this.hideZones.find((h) => x >= h.minX && x <= h.maxX && z >= h.minZ && z <= h.maxZ) ?? null;
   }
 
   cardboardAt(x, z) {
@@ -735,50 +623,87 @@ export class World {
     return null;
   }
 
+  // Open ground for decorations: not on paths, water, hiding spots, obstacles or home.
+  isOpenGround(x, z, margin = 0.5) {
+    if (Math.abs(x) > this.halfX - 1 || Math.abs(z) > this.halfZ - 1) return false;
+    if (Math.hypot(x - this.home.x, z - this.home.z) < CONFIG.game.homeRadius + 1) return false;
+    if (Math.hypot(x - this.foodSpot.x, z - this.foodSpot.z) < 2) return false;
+    if (this.puddleAt(x, z, 0.8)) return false;
+    for (const g of this.grassPatches) if (Math.hypot(x - g.x, z - g.z) < g.r + margin) return false;
+    for (const b of this.boxes) {
+      if (x > b.minX - margin && x < b.maxX + margin && z > b.minZ - margin && z < b.maxZ + margin) return false;
+    }
+    for (const [x1, z1, x2, z2, w] of this.paths) {
+      const dx = x2 - x1;
+      const dz = z2 - z1;
+      const t = Math.max(0, Math.min(1, ((x - x1) * dx + (z - z1) * dz) / (dx * dx + dz * dz)));
+      if (Math.hypot(x - (x1 + dx * t), z - (z1 + dz * t)) < w * 0.7) return false;
+    }
+    return true;
+  }
+
   // ------------------------------------------------------------------- state
 
   setFoodCount(n) {
     this.foodCount = n;
-    this.cheeses.forEach((c, i) => (c.visible = i < n));
+    this.foodItems.forEach((c, i) => (c.visible = i < n));
   }
 
   dropFood(x, z) {
-    const wedge = new THREE.Mesh(this.wedgeGeo, this.cheeseMat);
-    wedge.position.set(x, 0.12, z);
-    wedge.castShadow = true;
+    const item = this.makeFoodMesh();
+    item.position.set(x, 0.12, z);
+    item.traverse((o) => (o.castShadow = true));
     const beacon = this.makeBeacon(0xffd23f);
     beacon.position.set(x, 0, z);
-    this.scene.add(wedge);
-    this.droppedFood.push({ wedge, beacon });
+    this.scene.add(item);
+    this.droppedFood.push({ item, beacon });
   }
 
-  // Picks up dropped cheese within `radius` of pos. Returns true if it found some.
+  // Picks up dropped food within `radius` of pos. Returns true if it found some.
   takeDroppedFood(pos, radius) {
     const i = this.droppedFood.findIndex(
-      (f) => Math.hypot(f.wedge.position.x - pos.x, f.wedge.position.z - pos.z) < radius,
+      (f) => Math.hypot(f.item.position.x - pos.x, f.item.position.z - pos.z) < radius,
     );
     if (i < 0) return false;
     const [f] = this.droppedFood.splice(i, 1);
-    this.scene.remove(f.wedge, f.beacon);
+    this.scene.remove(f.item, f.beacon);
     f.beacon.geometry.dispose();
     f.beacon.material.dispose();
     return true;
   }
 
   clearDroppedFood() {
-    while (this.droppedFood.length) {
-      const { wedge } = this.droppedFood[0];
-      this.takeDroppedFood(wedge.position, 0.01);
-    }
+    while (this.droppedFood.length) this.takeDroppedFood(this.droppedFood[0].item.position, 0.01);
   }
 
-  update(dt, mouse) {
+  // Checks the mouse against armed traps. Returns { trap, full } for a snap, else null.
+  checkTraps(mouse) {
+    if (mouse.position.y > 0.3) return null;
+    for (const trap of this.traps) {
+      const hit = trap.check(mouse.position, CONFIG.mouse.radius);
+      if (hit) return { trap, full: hit === 'full' };
+    }
+    return null;
+  }
+
+  update(dt, mouse, effects) {
     this.time += dt;
+
+    // Occasional ripples so the puddles read as water.
+    this.rippleTimer -= dt;
+    if (effects && this.puddles.length && this.rippleTimer <= 0) {
+      this.rippleTimer = 0.8 + Math.random() * 1.2;
+      const p = this.puddles[Math.floor(Math.random() * this.puddles.length)];
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.random() * (p.r - 0.8);
+      effects.ripple({ x: p.x + Math.cos(a) * d, z: p.z + Math.sin(a) * d }, 0.8, 1.6);
+    }
     const patch = mouse.position.y < 0.3 ? this.grassPatchAt(mouse.position.x, mouse.position.z) : null;
     for (const g of this.grassPatches) {
       const target = g === patch ? 0.35 : 1;
       g.material.opacity += (target - g.material.opacity) * Math.min(1, dt * 8);
     }
+    for (const trap of this.traps) trap.update(dt);
 
     this.foodBeacon.visible = !mouse.carrying && this.foodCount > 0;
     this.homeBeacon.visible = mouse.carrying;
@@ -788,7 +713,7 @@ export class World {
     for (const f of this.droppedFood) {
       f.beacon.visible = !mouse.carrying;
       f.beacon.material.opacity = pulse;
-      f.wedge.rotation.y += dt;
+      f.item.rotation.y += dt;
     }
   }
 }
