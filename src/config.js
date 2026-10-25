@@ -24,13 +24,16 @@ const farmCat = {
   wakesOnNoise: false,
   chaseStamina: Infinity, // seconds of chasing before it tires out
   hatesWater: true,
+  unreachablePatience: 6, // watches a mouse it can't reach (up on furniture) this long, then wanders off
+  ignoreTime: 6, // ...and ignores it for this long unless it hears it
 };
 
 export const CONFIG = {
   mouse: {
     radius: 0.25,
     height: 0.45, // for ducking under roofs and furniture
-    swimSpeed: 3.6, // swimming drains stamina like sprinting; running out costs a life
+    swimSpeed: 3.6, // swimming drains stamina; running out costs a life
+    swimDrain: 0.65, // stamina per second while swimming (sprinting drains 1)
     walkSpeed: 4.5,
     sprintSpeed: 8,
     carrySpeedMultiplier: 0.85, // slower while hauling food
@@ -55,18 +58,18 @@ export const CONFIG = {
     ragdoll: {
       ...farmCat,
       radius: 0.6,
-      chaseSpeed: 4.8,
-      searchSpeed: 2.2,
-      wanderSpeed: 1.4,
-      sightRange: 9,
-      spotRange: 9,
+      chaseSpeed: 5.0,
+      searchSpeed: 2.6,
+      wanderSpeed: 1.8,
+      sightRange: 10,
+      spotRange: 10,
       senseRange: 2,
       loseTrackTime: 0.8,
-      hideTimeToDistract: 3,
+      hideTimeToDistract: 3.5,
       distraction: 'nap',
-      distractionDuration: [14, 22], // nap after giving up a search
-      tiredNap: [7, 10], // flops down after chasing too long
-      chaseStamina: 5,
+      distractionDuration: [9, 14], // nap after giving up a search
+      tiredNap: [5, 7], // flops down after chasing too long
+      chaseStamina: 7,
       napTime: [8, 8], // napping when the level starts / after a catch
       wakesOnNoise: true,
       hatesWater: false,

@@ -422,11 +422,12 @@ export class Mouse {
     }
     this.moving = tilt > 0;
 
-    // --- sprint & stamina (swimming drains it like sprinting, moving or not)
+    // --- sprint & stamina (swimming drains it too, a bit slower, moving or not)
     const wantsSprint = input.sprint && this.moving && !this.swimming;
     const canSprint = this.sprinting ? this.stamina > 0 : this.stamina >= M.staminaMinToSprint;
     this.sprinting = wantsSprint && canSprint;
-    if (this.sprinting || this.swimming) this.stamina = Math.max(0, this.stamina - dt);
+    if (this.sprinting) this.stamina = Math.max(0, this.stamina - dt);
+    else if (this.swimming) this.stamina = Math.max(0, this.stamina - M.swimDrain * dt);
     else this.stamina = Math.min(M.staminaMax, this.stamina + M.staminaRegen * dt);
 
     let speed = this.swimming ? M.swimSpeed : this.sprinting ? M.sprintSpeed : M.walkSpeed;

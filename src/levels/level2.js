@@ -76,7 +76,8 @@ export default {
 
 // ------------------------------------------------------------------ helpers
 
-function wall(world, x, z, w, d, material) {
+// These furniture builders are shared with Level 4 (upstairs in the same house).
+export function wall(world, x, z, w, d, material) {
   world.addBox(x, z, w, d, WALL_H, material, { blocksCamera: true });
   // Baseboard trim around the foot of the wall.
   const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, 0.6, d + 0.16), mat(0xf4efe6, { roughness: 0.6 }));
@@ -85,7 +86,7 @@ function wall(world, x, z, w, d, material) {
   world.scene.add(base);
 }
 
-function legs(world, cx, cz, w, d, height, size, material) {
+export function legs(world, cx, cz, w, d, height, size, material) {
   const ox = w / 2 - size / 2 - 0.05;
   const oz = d / 2 - size / 2 - 0.05;
   for (const sx of [-1, 1]) {
@@ -95,7 +96,7 @@ function legs(world, cx, cz, w, d, height, size, material) {
 
 // Sofa or armchair (w along x, d along z) raised on short legs so the mouse
 // can hide underneath. `back` is the side the backrest is on: 'n' 's' 'e' 'w'.
-function couch(world, cx, cz, w, d, back, fabric) {
+export function couch(world, cx, cz, w, d, back, fabric) {
   const clear = 0.6;
   const wood = texturedMat('wood', 1, 1, { color: 0x5a3a24 });
   legs(world, cx, cz, w, d, clear, 0.3, wood);
@@ -126,13 +127,13 @@ function couch(world, cx, cz, w, d, back, fabric) {
   world.addHideZone(cx - w / 2 + 0.45, cx + w / 2 - 0.45, cz - d / 2 + 0.45, cz + d / 2 - 0.45);
 }
 
-function table(world, cx, cz, w, d, height, material) {
+export function table(world, cx, cz, w, d, height, material) {
   const thick = 0.25;
   world.addBox(cx, cz, w, d, thick, material, { y: height - thick });
   legs(world, cx, cz, w, d, height - thick, 0.35, material);
 }
 
-function chair(world, cx, cz, back, material) {
+export function chair(world, cx, cz, back, material) {
   const s = 1.8;
   world.addBox(cx, cz, s, s, 0.15, material, { y: 1.65 });
   legs(world, cx, cz, s, s, 1.65, 0.2, material);
@@ -147,14 +148,14 @@ function chair(world, cx, cz, back, material) {
 }
 
 // Tall cabinet/dresser on legs with a mouse-sized gap underneath.
-function raisedCabinet(world, cx, cz, w, d, height, material) {
+export function raisedCabinet(world, cx, cz, w, d, height, material) {
   const clear = 0.6;
   legs(world, cx, cz, w, d, clear, 0.3, material);
   world.addBox(cx, cz, w, d, height - clear, material, { y: clear });
   world.addHideZone(cx - w / 2 + 0.4, cx + w / 2 - 0.4, cz - d / 2 + 0.4, cz + d / 2 - 0.4);
 }
 
-function windowPane(world, x, y, z, w, h, rotY = 0) {
+export function windowPane(world, x, y, z, w, h, rotY = 0) {
   const g = new THREE.Group();
   g.position.set(x, y, z);
   g.rotation.y = rotY;
@@ -336,6 +337,7 @@ function buildPantry(world) {
   jar.rotation.y = 0.5;
   jar.position.set(28.4, 0.7, -17.6);
   world.scene.add(jar);
+  world.addCollider(28.4, -17.6, 1.9, 1.5, 1.4); // the jar lying on its side, roughly
   const crumbMat = mat(0xc88a4a);
   for (let i = 0; i < 14; i++) {
     const crumb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.05 + (i % 3) * 0.02, 0), crumbMat);

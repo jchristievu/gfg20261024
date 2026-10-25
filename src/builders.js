@@ -73,6 +73,22 @@ export const FOOD_MODELS = {
     }
     return g;
   },
+  // A wrapped candy: a round sweet with twisted wrapper ends.
+  candy() {
+    const g = new THREE.Group();
+    const colors = [0xe8434b, 0x3fa7e0, 0x8fd14f, 0xf2b630, 0xb06ad8];
+    const wrapper = mat(colors[Math.floor(Math.random() * colors.length)], { roughness: 0.25, metalness: 0.2 });
+    const sweet = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 10), wrapper);
+    sweet.scale.set(1.25, 0.9, 0.9);
+    g.add(sweet);
+    for (const s of [-1, 1]) {
+      const twist = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.16, 6), wrapper);
+      twist.rotation.z = s * Math.PI / 2;
+      twist.position.x = s * 0.24;
+      g.add(twist);
+    }
+    return g;
+  },
   corn() {
     const g = new THREE.Group();
     const cob = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.32, 4, 10), mat(0xf2c230, { roughness: 0.6 }));

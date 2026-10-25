@@ -22,7 +22,9 @@ export default {
   food: 'cheese',
 
   createEnemies(scene, world) {
-    return [new Cat(scene, world, 'farm', [0, 0, 16])];
+    // When it isn't chasing, the cat prowls the corridor between the mouse's
+    // shed and the cheese plate, so crossing the farm means crossing its path.
+    return [new Cat(scene, world, 'farm', [0, 0, 16], { patrol: { from: [-24, 24], to: [18, -14], width: 8 } })];
   },
 
   build(world) {

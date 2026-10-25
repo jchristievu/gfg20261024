@@ -3,98 +3,128 @@ import { CONFIG } from '../config.js';
 import { texturedMat } from '../textures.js';
 import { Creature } from './creature.js';
 
-// Large, trim Dalmatian facing +z: white with black spots, black floppy ears.
+// German shorthaired pointer in black roan, facing +z: athletic and long-legged
+// with a deep chest and tucked waist, solid black head with broad hanging ears,
+// a long square muzzle, ticked white-and-black coat, and a short docked tail.
 function buildModel() {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
 
-  const coat = texturedMat('dalmatian', 1, 2, { roughness: 0.9 });
-  const coatSmall = texturedMat('dalmatian', 0.6, 0.6, { roughness: 0.9 });
-  const white = new THREE.MeshStandardMaterial({ color: 0xf6f4ef, roughness: 0.9 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x1c1a1a, roughness: 0.7 });
-  const red = new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.5 });
+  const coat = texturedMat('pointerCoat', 2, 1.3, { roughness: 0.85 }); // ~even ticking around and along the body
+  const coatSmall = texturedMat('pointerCoat', 0.5, 0.5, { roughness: 0.85 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x1b1a1a, roughness: 0.55 }); // short glossy coat
+  const white = new THREE.MeshStandardMaterial({ color: 0xe9e7e2, roughness: 0.85 });
+  const brown = new THREE.MeshStandardMaterial({ color: 0x5a3a1e, roughness: 0.3 });
+  const orange = new THREE.MeshStandardMaterial({ color: 0xe8701e, roughness: 0.5 }); // hunting collar
 
-  const legLen = 0.8;
-  const bodyR = 0.3;
-  const bodyLen = 1.1;
-  const bodyY = legLen + bodyR * 0.55;
+  const legLen = 0.84;
+  const bodyR = 0.26;
+  const bodyLen = 1.05;
+  const bodyY = legLen + bodyR * 0.5;
   const front = bodyLen / 2 + bodyR;
 
-  // Deep chest, tucked waist.
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(bodyR, bodyLen, 8, 16), coat);
+  // Torso, plus a deep chest that drops below the belly line and a lean rear:
+  // together they give the pointer's tucked-up waist.
+  // A plain cylinder (not a capsule) so the coat texture spreads evenly along it;
+  // the chest and haunch round off the ends.
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(bodyR, bodyR, bodyLen, 18, 1, true), coat);
   torso.rotation.x = Math.PI / 2;
   torso.position.y = bodyY;
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(bodyR * 1.15, 14, 10), coatSmall);
-  chest.scale.set(0.95, 1.1, 1);
-  chest.position.set(0, bodyY - 0.03, front - bodyR * 0.9);
-  body.add(torso, chest);
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), coatSmall);
+  chest.scale.set(0.82, 1.15, 1.05);
+  chest.position.set(0, bodyY - 0.09, front - 0.32);
+  const haunch = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 10), coatSmall);
+  haunch.scale.set(0.95, 1, 1.1);
+  haunch.position.set(0, bodyY + 0.03, -bodyLen / 2 + 0.05);
+  // A solid black saddle patch across the back.
+  const saddle = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2.6), black);
+  saddle.scale.set(1.0, 0.75, 1.5);
+  saddle.position.set(0, bodyY + 0.07, -0.05); // just breaks the top line of the back
+  body.add(torso, chest, haunch, saddle);
 
   // Neck and head on a pivot so it can look around and bark.
   const head = new THREE.Group();
-  head.position.set(0, bodyY + 0.2, front - 0.1);
+  head.position.set(0, bodyY + 0.18, front - 0.12);
   body.add(head);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 0.55, 10), coatSmall);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.17, 0.58, 12), coatSmall);
   neck.position.set(0, 0.2, 0.08);
-  neck.rotation.x = 0.55;
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), white);
-  skull.scale.set(0.95, 0.9, 1.1);
-  skull.position.set(0, 0.48, 0.25);
-  const snout = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.22, 4, 10), white);
-  snout.rotation.x = Math.PI / 2;
-  snout.position.set(0, 0.42, 0.5);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), black);
-  nose.position.set(0, 0.45, 0.66);
-  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 0.22), new THREE.MeshStandardMaterial({ color: 0x8a2a2a }));
-  jaw.position.set(0, 0.34, 0.5);
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.035, 6, 16), red);
-  collar.rotation.x = Math.PI / 2 - 0.55;
-  collar.position.set(0, 0.08, 0.02);
-  head.add(neck, skull, snout, nose, jaw, collar);
+  neck.rotation.x = 0.6;
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.03, 6, 18), orange);
+  collar.rotation.x = Math.PI / 2 - 0.6;
+  collar.position.set(0, 0.12, 0.05);
+  // Solid black head: domed skull, a long square muzzle, big nose.
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 12), black);
+  skull.scale.set(0.85, 0.9, 1.1);
+  skull.position.set(0, 0.51, 0.22);
+  // Muzzle: a rounded-top block that tapers slightly toward the nose.
+  const muzzleGeo = new THREE.BoxGeometry(0.15, 0.13, 0.28, 1, 1, 2);
+  const mp = muzzleGeo.attributes.position;
+  for (let i = 0; i < mp.count; i++) {
+    const front = (mp.getZ(i) + 0.14) / 0.28; // 0 at the back, 1 at the nose
+    mp.setX(i, mp.getX(i) * (1 - front * 0.18));
+  }
+  muzzleGeo.computeVertexNormals();
+  const muzzle = new THREE.Mesh(muzzleGeo, black);
+  muzzle.position.set(0, 0.45, 0.44);
+  const muzzleTop = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.22, 4, 10), black);
+  muzzleTop.rotation.x = Math.PI / 2;
+  muzzleTop.position.set(0, 0.49, 0.44);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), new THREE.MeshStandardMaterial({ color: 0x0c0b0b, roughness: 0.2 }));
+  nose.scale.set(1.3, 0.95, 0.8);
+  nose.position.set(0, 0.48, 0.59);
+  // Lower jaw: black lip outside, red mouth only shows when it drops open to bark.
+  const jaw = new THREE.Group();
+  jaw.position.set(0, 0.385, 0.32);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.04, 0.25), black);
+  lip.position.z = 0.12;
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.01, 0.22), new THREE.MeshStandardMaterial({ color: 0x8a2a2a }));
+  mouth.position.set(0, 0.022, 0.12);
+  jaw.add(lip, mouth);
+  // Narrow white blaze up the forehead.
+  const blaze = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.012, 0.2), white);
+  blaze.position.set(0, 0.645, 0.27);
+  blaze.rotation.x = 0.25;
+  head.add(neck, collar, skull, muzzle, muzzleTop, nose, jaw, blaze);
   for (const s of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), black);
-    eye.position.set(s * 0.1, 0.54, 0.43);
-    // Black floppy ears hanging down the sides of the head.
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), black);
-    ear.scale.set(0.35, 1.2, 0.8);
-    ear.position.set(s * 0.19, 0.42, 0.2);
-    ear.rotation.z = s * 0.25;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), brown);
+    eye.position.set(s * 0.085, 0.54, 0.35);
+    // Broad, flat, rounded ears hanging close to the head down to the jaw line.
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), black);
+    ear.scale.set(0.22, 1.35, 0.95);
+    ear.position.set(s * 0.155, 0.4, 0.18);
+    ear.rotation.z = s * 0.1;
     head.add(eye, ear);
   }
-  const spot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), black);
-  spot.scale.set(1, 0.4, 1);
-  spot.position.set(0.06, 0.66, 0.2);
-  head.add(spot);
 
-  // Long legs with a black spot or two.
+  // Long, lean legs; ticked white paws.
   const legs = [];
-  const lx = bodyR * 0.62;
+  const lx = bodyR * 0.65;
   const lz = bodyLen / 2;
   for (const [x, z] of [[-lx, lz], [lx, lz], [-lx, -lz], [lx, -lz]]) {
     const hip = new THREE.Group();
     hip.position.set(x, legLen, z);
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, legLen, 8), coatSmall);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.05, legLen, 8), coatSmall);
     leg.position.y = -legLen / 2;
-    const paw = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), white);
-    paw.scale.set(1, 0.6, 1.3);
+    const paw = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 6), coatSmall);
+    paw.scale.set(1, 0.6, 1.35);
     paw.position.set(0, -legLen + 0.03, 0.03);
     hip.add(leg, paw);
     body.add(hip);
     legs.push(hip);
   }
 
-  // Thin tail curving up, black tip.
+  // Short docked tail held out level.
   const tail = new THREE.Group();
-  tail.position.set(0, bodyY + 0.1, -(bodyLen / 2 + bodyR * 0.8));
+  tail.position.set(0, bodyY + 0.08, -(bodyLen / 2 + bodyR * 0.85));
   const curve = new THREE.CatmullRomCurve3([
     new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, 0.15, -0.25),
-    new THREE.Vector3(0, 0.38, -0.4),
-    new THREE.Vector3(0, 0.6, -0.42),
+    new THREE.Vector3(0, 0.04, -0.14),
+    new THREE.Vector3(0, 0.08, -0.28),
   ]);
-  tail.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 14, 0.045, 6), white));
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.047, 6, 4), black);
-  tip.position.set(0, 0.6, -0.42);
+  tail.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 8, 0.045, 8), coatSmall));
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.046, 8, 6), black);
+  tip.position.set(0, 0.08, -0.28);
   tail.add(tip);
   body.add(tail);
 
@@ -186,6 +216,6 @@ export class Dog extends Creature {
     // Barking: head bobs and the jaw snaps; otherwise a happy tail wag.
     this.model.head.rotation.x = barking ? -0.15 + Math.max(0, Math.sin(t * 14)) * 0.2 : 0;
     this.model.jaw.rotation.x = barking ? Math.max(0, Math.sin(t * 14)) * 0.5 : 0;
-    this.model.tail.rotation.z = Math.sin(t * (barking ? 14 : 6)) * 0.5;
+    this.model.tail.rotation.y = Math.sin(t * (barking ? 14 : 6)) * 0.5; // docked tail wags side to side
   }
 }

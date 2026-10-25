@@ -180,7 +180,9 @@ function buildButterfly() {
 // the farm cat (always knows where an exposed mouse is, chases a butterfly when
 // it gives up) or the indoor ragdoll (has to see you, tires fast, naps a lot).
 export class Cat extends Creature {
-  constructor(scene, world, kind, spawn) {
+  // `patrol` (optional): { from: [x, z], to: [x, z], width } corridor it prowls
+  // along instead of wandering anywhere.
+  constructor(scene, world, kind, spawn, { patrol = null } = {}) {
     const style = STYLES[kind];
     const model = buildModel(style);
     super(scene, world, model, CONFIG.cats[kind].radius, model.iconHeight);
@@ -189,6 +191,7 @@ export class Cat extends Creature {
     [this.caughtTitle, this.caughtText] = style.caught;
     this.p = CONFIG.cats[kind];
     this.spawn = new THREE.Vector3(...spawn);
+    this.patrol = patrol;
     this.avoidWater = this.p.hatesWater;
     if (this.p.distraction === 'butterfly') {
       this.butterfly = buildButterfly();
@@ -209,6 +212,7 @@ export class Cat extends Creature {
     // Forget the last life's targets so a respawn doesn't replay the same moves.
     this.wanderPoint = null;
     this.prowlPause = 0;
+    this.ignoreTimer = 0;
     this.lastKnown.copy(this.spawn);
     this.searchPoint.copy(this.spawn);
     this.nap(this.p.napTime);
@@ -234,6 +238,7 @@ export class Cat extends Creature {
     this.lastKnown.copy(mouse.position);
     this.lostTimer = 0;
     this.chaseTime = 0;
+    this.unreachable = 0;
   }
 
   // Something (the dog) is raising the alarm about the mouse at `point`: wake up
@@ -247,7 +252,7 @@ export class Cat extends Creature {
   // Can it tell where an exposed mouse is right now? Close up it smells/hears
   // you through anything; farther out it has to actually see you.
   sees(mouse) {
-    if (mouse.hidden || mouse.swimming) return false;
+    if (mouse.hidden || mouse.swimming || this.ignoreTimer > 0) return false;
     if (dist2d(this.position, mouse.position) <= this.p.senseRange) return true;
     return this.canSee(mouse, this.p.spotRange);
   }
@@ -269,8 +274,9 @@ export class Cat extends Creature {
     const C = this.p;
     const toMouse = dist2d(this.position, mouse.position);
     const heard = !mouse.inHome && mouse.noise > 0 && toMouse <= mouse.noise;
-    const noticed = !mouse.hidden && !mouse.swimming && toMouse < C.noticeDistance;
+    const noticed = !mouse.hidden && !mouse.swimming && toMouse < C.noticeDistance && !(this.ignoreTimer > 0);
     this.speedThisFrame = 0;
+    this.ignoreTimer = Math.max(0, (this.ignoreTimer ?? 0) - dt);
 
     // Cats that hate water won't go after a swimming mouse.
     if (C.hatesWater && mouse.swimming && (this.state === 'chase' || this.state === 'search')) this.startDistraction();
@@ -311,6 +317,14 @@ export class Cat extends Creature {
           // Lazy cat: too much running, time to lie down.
           this.nap(C.tiredNap);
           this.tired = true;
+          break;
+        }
+        // Watching a mouse that's up out of reach gets boring: eventually it wanders off.
+        this.unreachable = this.tracking && mouse.position.y > this.position.y + 1.2 ? this.unreachable + dt : 0;
+        if (this.unreachable > C.unreachablePatience) {
+          this.setState('wander');
+          this.ignoreTimer = C.ignoreTime;
+          this.pickWanderPoint();
           break;
         }
         if (this.tracking) {
@@ -408,9 +422,28 @@ export class Cat extends Creature {
     this.searchPointTimer = 3;
   }
 
-  // Prowl somewhere nearby, but not around the mouse hole.
+  // Prowl somewhere nearby (or along its patrol corridor), but not around the mouse hole.
   pickWanderPoint() {
     const home = this.world.home;
+    if (this.patrol) {
+      const { from, to, width } = this.patrol;
+      const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
+      const nx = -(to[1] - from[1]) / len; // unit normal to the corridor
+      const nz = (to[0] - from[0]) / len;
+      for (let i = 0; i < 20; i++) {
+        const t = Math.random();
+        const off = (Math.random() * 2 - 1) * width;
+        const x = from[0] + (to[0] - from[0]) * t + nx * off;
+        const z = from[1] + (to[1] - from[1]) * t + nz * off;
+        const hop = Math.hypot(x - this.position.x, z - this.position.z);
+        // A real walk to somewhere else in the corridor, not a shuffle or a cross-map trek.
+        if (hop < 5 || hop > 22) continue;
+        if (Math.hypot(x - home.x, z - home.z) < this.p.butterflyHomeClearance) continue;
+        if (!this.world.isValidEnemyPoint(x, z, this.radius, this.avoidWater)) continue;
+        this.wanderPoint = new THREE.Vector3(x, 0, z);
+        return;
+      }
+    }
     for (let i = 0; i < 10; i++) {
       const p = this.randomPointNear(this.position.x, this.position.z, 4, 12, 1);
       if (p && Math.hypot(p.x - home.x, p.z - home.z) >= this.p.butterflyHomeClearance) {
@@ -469,6 +502,7 @@ export class Cat extends Creature {
     if (this.bored) return this.state === 'sleep' ? `${n}: stirring… hide!` : `${n}: getting bored… hide!`;
     if (this.state === 'sleep' && this.tired) return `${n}: worn out, napping`;
     if (this.state === 'chase' && this.investigating) return `${n}: heard the alarm, coming!`;
+    if (this.state === 'wander' && this.ignoreTimer > 0) return `${n}: lost interest, wandering off`;
     return {
       sleep: `${n}: napping`,
       wander: `${n}: prowling`,

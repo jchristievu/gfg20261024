@@ -414,20 +414,27 @@ export class World {
   }
 
   // One food item per piece still to collect, arranged around the food spot.
-  // The level draws whatever it sits on (plate, jar, sack).
+  // The food spot's y is the surface it sits on (0 = floor; Level 4 puts it up
+  // on a bookcase). The level draws whatever it sits on (plate, jar, sack).
   buildFood() {
-    const { x, z } = this.foodSpot;
+    const { x, y, z } = this.foodSpot;
     for (let i = 0; i < this.foodToWin; i++) {
       const item = this.makeFoodMesh();
       const a = (i / this.foodToWin) * Math.PI * 2;
-      item.position.set(x + Math.cos(a) * 0.45, 0.16, z + Math.sin(a) * 0.45);
+      item.position.set(x + Math.cos(a) * 0.45, y + 0.16, z + Math.sin(a) * 0.45);
       item.rotation.y = a;
       item.traverse((o) => (o.castShadow = true));
       this.scene.add(item);
       this.foodItems.push(item);
     }
     this.foodBeacon = this.makeBeacon(0xffd23f);
-    this.foodBeacon.position.set(x, 0, z);
+    this.foodBeacon.position.set(x, y, z);
+  }
+
+  // Is the mouse close enough to pick up food from the pile?
+  atFood(pos) {
+    const f = this.foodSpot;
+    return Math.hypot(pos.x - f.x, pos.z - f.z) < CONFIG.game.foodPickupRadius && Math.abs(pos.y - f.y) < 0.5;
   }
 
   // ------------------------------------------------------------------ queries
@@ -588,10 +595,13 @@ export class World {
 
   // True if nothing between a and b blocks an enemy's eye line.
   hasLineOfSight(a, b) {
+    const inside = (p, box) => p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ;
     for (const box of this.boxes) {
       if (box.top <= E.eyeHeight || (box.bottom ?? 0) >= E.eyeHeight) continue;
-      // Standing on top of it (cat on a crate) doesn't block your own view.
-      if (a.x >= box.minX && a.x <= box.maxX && a.z >= box.minZ && a.z <= box.maxZ) continue;
+      // Standing on top of it (cat on a crate) doesn't block your own view...
+      if (inside(a, box)) continue;
+      // ...and a mouse standing on top of it is in plain view, not hidden inside it.
+      if ((b.y ?? 0) >= box.top - 0.1 && inside(b, box)) continue;
       if (segmentHitsRect(a.x, a.z, b.x, b.z, box.minX, box.maxX, box.minZ, box.maxZ) !== null) return false;
     }
     return true;
@@ -705,6 +715,7 @@ export class World {
     }
     for (const trap of this.traps) trap.update(dt);
 
+    for (const item of this.foodItems) item.rotation.y += this.level.spinFood ? dt * 1.5 : 0;
     this.foodBeacon.visible = !mouse.carrying && this.foodCount > 0;
     this.homeBeacon.visible = mouse.carrying;
     const pulse = 0.14 + Math.sin(this.time * 3) * 0.05;

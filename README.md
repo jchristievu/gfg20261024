@@ -1,6 +1,6 @@
 # Farm Mouse
 
-A third-person 3D browser game built with [Three.js](https://threejs.org/) and Vite. You're a mouse on a farm: sneak out, grab food, and carry it back to your hole without getting caught. Three levels, each with its own hunter.
+A third-person 3D browser game built with [Three.js](https://threejs.org/) and Vite. You're a mouse on a farm: sneak out, grab food, and carry it back to your hole without getting caught. Four levels, each with its own hunters and hazards.
 
 ## Running it
 
@@ -47,7 +47,7 @@ Cheese from the plate by the farmhouse, past the **farm cat** (gray and white).
 | Cat state | Icon | What it does |
 | --- | --- | --- |
 | Napping | z | Short grace period at the start and after a catch. |
-| Prowling | | Wanders the farm, sitting a while between stops, until it senses you. |
+| Prowling | | Patrols the middle of the farm between your shed and the cheese, sitting a while between stops, until it senses you. |
 | Chasing | ! | Runs at you while it can sense you: it sees you out in the open within 18 units with a clear view, and smells/hears you within 6 units even around obstacles. |
 | Searching | ? | You hid. It sniffs around where it last saw you. Stay hidden for 4s and it gives up. |
 | Distracted | ♪ | Chases a butterfly for 12–18s. Noise or walking right past it snaps it back. |
@@ -61,8 +61,8 @@ The farm cat has to sense you to know where you are. Out of smelling range (6 un
 
 Cookies from the pantry, through the living room and kitchen.
 
-- **Ragdoll cat:** lazy. It has to actually see you (walls and furniture block its view). It tires out after about 5 seconds of chasing and flops down for a nap. It naps after giving up a search, too. Noise wakes it, and "stirring…" warns you it's about to get up.
-- **Dog:** a Dalmatian that patrols a loop through the living room, doorway and kitchen, stopping to look around. It has wide vision (150°, 10 units) but needs a clear line of sight, and it hears loud noise. If it notices you it stops and barks, and the ragdoll (even mid-nap) heads straight for that spot and searches there. The dog never hurts you and doesn't set off traps.
+- **Ragdoll cat:** lazy. It has to actually see you (walls and furniture block its view). It tires out after about 7 seconds of chasing and flops down for a nap. It naps after giving up a search, too. Noise wakes it, and "stirring…" warns you it's about to get up.
+- **Dog:** a black-and-white German shorthaired pointer that patrols a loop through the living room, doorway and kitchen, stopping to look around. It has wide vision (150°, 10 units) but needs a clear line of sight, and it hears loud noise. If it notices you it stops and barks, and the ragdoll (even mid-nap) heads straight for that spot and searches there. The dog never hurts you and doesn't set off traps.
 - **Mousetraps:** brushing a trap's edge snaps it: you're stunned for 2 seconds and the snap is loud enough to wake the cat. Stepping on the trigger plate costs a life. Sprung traps stay sprung.
 - Hide under the sofa, armchair, dresser, hutch and rolling cart, or in the shoebox, pet carrier, soda case and paper bag. You can walk under the tables and chairs, and so can the cat.
 
@@ -73,6 +73,15 @@ Corn from inside the coop.
 - **Hens** wander and peck. If one sees you close by, or hears you, it squawks. Hens never attack.
 - **Rooster:** guards the coop door. He charges at whatever a hen squawks about (or a loud noise) and chases you while he can see you. He only sees what's in front of him, and he **never searches**: the moment you hide or get out of sight, he struts back to his post.
 - The front door is the short, risky way in. There's a mouse-sized gap in the coop's back wall (hens and the rooster can't fit), watched over by a hen that wanders along the back of the coop, and you can hide under the nesting boxes inside.
+
+### Level 4: Upstairs
+
+Candy from on top of the tall bookcase in the study, on the farmhouse's second floor. You have to climb:
+
+- **Furniture route:** footstool → desk chair → desk → book stack → wall shelf → higher shelf → bookcase top.
+- **Box stairs:** a quicker staircase of stacked moving boxes in the corner, but the ragdoll can hop onto the lower boxes.
+- The ragdoll can reach anything up to about 2 units high. Higher than that, it can only watch. If it can't reach you for a few seconds, it loses interest and wanders off ("lost interest, wandering off"). That's your chance to come down, but landings are noisy and noise brings it back.
+- A missed jump drops you to the floor. Mousetraps wait near the bases of both climbs and in the doorway. Hide under the bed, dresser or armchair, or in the toy box.
 
 ## Code layout
 

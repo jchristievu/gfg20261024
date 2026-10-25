@@ -14,6 +14,7 @@ const FOOD_NAMES = {
   cheese: { title: 'Cheese', noun: 'cheese' },
   cookie: { title: 'Cookies', noun: 'cookie' },
   corn: { title: 'Corn', noun: 'corn' },
+  candy: { title: 'Candy', noun: 'candy' },
 };
 
 // ------------------------------------------------------------------ renderer
@@ -174,7 +175,10 @@ function loadLevel(index) {
   const level = LEVELS[index];
   const scene = new THREE.Scene();
   const sky = new Sky(scene, renderer);
-  if (!level.outdoor) scene.fog = null;
+  if (!level.outdoor) {
+    scene.fog = null;
+    for (const c of sky.clouds) c.visible = false; // indoors: no sky to see
+  }
 
   scene.add(
     level.outdoor
@@ -301,12 +305,11 @@ function updatePlaying(dt) {
     return;
   }
 
-  if (!mouse.carrying && mouse.position.y < 0.5 && !mouse.swimming) {
-    const toFood = Math.hypot(mouse.position.x - world.foodSpot.x, mouse.position.z - world.foodSpot.z);
-    if (world.takeDroppedFood(mouse.position, CONFIG.game.foodPickupRadius)) {
+  if (!mouse.carrying && !mouse.swimming) {
+    if (mouse.position.y < 0.5 && world.takeDroppedFood(mouse.position, CONFIG.game.foodPickupRadius)) {
       mouse.carrying = true;
       hud.toast(`Got the ${food.noun} back!`);
-    } else if (world.foodCount > 0 && toFood < CONFIG.game.foodPickupRadius) {
+    } else if (world.foodCount > 0 && world.atFood(mouse.position)) {
       mouse.carrying = true;
       world.setFoodCount(world.foodCount - 1);
       hud.toast(`Got the ${food.noun}! Get it home.`);

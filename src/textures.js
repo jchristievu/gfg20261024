@@ -237,26 +237,38 @@ const GENERATORS = {
     }
   },
 
-  dalmatian(ctx, w, h) {
-    const rng = makeRng(17);
-    ctx.fillStyle = '#f6f4ef';
+  // German shorthaired pointer, black roan: white with dense fine black ticking
+  // and a few solid black patches.
+  pointerCoat(ctx, w, h) {
+    const rng = makeRng(18);
+    ctx.fillStyle = '#e9e7e2';
     ctx.fillRect(0, 0, w, h);
-    streaks(ctx, w, h, rng, ['#ffffff', '#e9e6df'], 300, 8, 1, 0.4);
-    ctx.fillStyle = '#1c1a1a';
-    for (let i = 0; i < 46; i++) {
+    const wrapped = (draw) => {
+      for (const ox of [-w, 0, w]) for (const oy of [-h, 0, h]) draw(ox, oy);
+    };
+    // Patches first so the ticking speckles over their edges.
+    ctx.fillStyle = '#1b1a1a';
+    for (let i = 0; i < 5; i++) {
       const x = rng() * w;
       const y = rng() * h;
-      const r = 5 + rng() * 9;
-      const ry = r * (0.7 + rng() * 0.4);
+      const rx = 18 + rng() * 26;
+      const ry = 14 + rng() * 20;
       const rot = rng() * Math.PI;
-      // Wrapped copies keep the tile seamless.
-      for (const ox of [-w, 0, w]) {
-        for (const oy of [-h, 0, h]) {
-          ctx.beginPath();
-          ctx.ellipse(x + ox, y + oy, r, ry, rot, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      wrapped((ox, oy) => {
+        ctx.beginPath();
+        ctx.ellipse(x + ox, y + oy, rx, ry, rot, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+    // Ticking: lots of tiny dark flecks, some grey.
+    for (let i = 0; i < 2600; i++) {
+      const x = rng() * w;
+      const y = rng() * h;
+      const r = 0.6 + rng() * 1.6;
+      ctx.fillStyle = rng() < 0.75 ? '#1b1a1a' : '#6a6866';
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * 1.6, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   },
 
