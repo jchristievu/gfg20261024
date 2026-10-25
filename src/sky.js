@@ -36,6 +36,7 @@ function skyDome() {
         float sun = max(dot(vDir, sunDir), 0.0);
         col += vec3(1.0, 0.92, 0.75) * (pow(sun, 600.0) * 2.0 + pow(sun, 12.0) * 0.25);
         gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
   });

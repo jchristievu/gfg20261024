@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { texture, texturedMat } from './textures.js';
-import { addWind } from './effects.js';
+import { texture, texturedMat, waterNormals } from './textures.js';
+import { addWind, addRipples } from './effects.js';
 import { bladeGeometry } from './decor.js';
 import { mat, FOOD_MODELS } from './builders.js';
 import { Mousetrap } from './traps.js';
@@ -299,14 +299,18 @@ export class World {
     mud.receiveShadow = true;
     const water = new THREE.Mesh(
       new THREE.CircleGeometry(r, 48),
-      new THREE.MeshStandardMaterial({
-        color: 0x3f6f9a,
-        roughness: 0.04,
-        metalness: 0.25,
-        transparent: true,
-        opacity: 0.88,
-        envMapIntensity: 1.6,
-      }),
+      addRipples(
+        new THREE.MeshStandardMaterial({
+          color: 0x3f6f9a,
+          roughness: 0.06,
+          metalness: 0.2,
+          transparent: true,
+          opacity: 0.88,
+          envMapIntensity: 1.8,
+          normalMap: waterNormals(r / 1.5),
+          normalScale: new THREE.Vector2(0.3, 0.3),
+        }),
+      ),
     );
     water.rotation.x = -Math.PI / 2;
     water.position.set(x, 0.03, z);
@@ -557,7 +561,17 @@ export class World {
       [to.x, to.z],
     ];
     const goal = nodes.length - 1;
+    // A corner tucked into a neighboring wall (or off the map) is a dead end:
+    // heading for it pins the walker in the corner, so leave it out.
+    const open = nodes.map(([x, z], i) => {
+      if (i === 0 || i === goal) return true;
+      if (Math.abs(x) > this.halfX - radius || Math.abs(z) > this.halfZ - radius) return false;
+      return !this.boxes.some(
+        (b) => b !== hit && this.blocksEnemy(b) && x > b.minX - inset && x < b.maxX + inset && z > b.minZ - inset && z < b.maxZ + inset,
+      );
+    });
     const visible = (a, b) =>
+      open[a] && open[b] &&
       segmentHitsRect(
         nodes[a][0], nodes[a][1], nodes[b][0], nodes[b][1],
         hit.minX - inset, hit.maxX + inset, hit.minZ - inset, hit.maxZ + inset,
@@ -584,9 +598,10 @@ export class World {
     const path = [];
     for (let n = dist[goal] < Infinity ? goal : -1; n > 0; n = prev[n]) path.unshift(n);
     if (!path.length) {
-      // Couldn't find a route (e.g. pinned inside the inset box): aim for the nearest corner.
-      path.push(1 + [1, 2, 3, 4].map((i) => Math.hypot(nodes[i][0] - from.x, nodes[i][1] - from.z))
-        .reduce((best, d, i, arr) => (d < arr[best] ? i : best), 0));
+      // Couldn't find a route (e.g. pinned inside the inset box): aim for the nearest open corner.
+      const corners = [1, 2, 3, 4].filter((i) => open[i]);
+      const dist2 = (i) => Math.hypot(nodes[i][0] - from.x, nodes[i][1] - from.z);
+      if (corners.length) path.push(corners.reduce((best, i) => (dist2(i) < dist2(best) ? i : best)));
     }
     // Skip a corner we're already standing on so we don't stall there.
     const next = path.find((n) => Math.hypot(nodes[n][0] - from.x, nodes[n][1] - from.z) > 0.3) ?? goal;

@@ -3,7 +3,7 @@ import { texturedMat } from '../textures.js';
 import { mat } from '../builders.js';
 import { Cat } from '../enemies/cat.js';
 import { addArchedHole } from './level1.js';
-import { wall, legs, couch, table, chair, raisedCabinet, windowPane } from './level2.js';
+import { wall, legs, cornerArmchair, table, chair, raisedCabinet, windowPane } from './level2.js';
 
 // Level 4: upstairs in the farmhouse. The candy stash is on top of a tall
 // bookcase in the study, so the mouse has to climb: footstool -> chair -> desk
@@ -107,10 +107,8 @@ function buildBedroom(world) {
   raisedCabinet(world, -12, 18.2, 6, 2, 3.4, texturedMat('wood', 2, 1, { color: 0xd8b088 })); // dresser
   world.buildCardboardBox(-21, 3, 0, { w: 1.8, d: 1.4, h: 1.1, material: mat(0xe8a040, { roughness: 0.6 }) }); // toy box
 
-  // Banister around the top of the stairs: cover from the cat's view.
-  const rail = texturedMat('wood', 3, 1, { color: 0x8a5a34 });
-  world.addBox(-6, 13.5, 7, 0.3, 2.6, rail);
-  for (let i = 0; i < 8; i++) world.addBox(-9.3 + i * 0.95, 13.5, 0.12, 0.12, 2.6, rail, { collide: false });
+  // Armchair angled into the corner by the doorway wall, matching the study's: hide underneath.
+  cornerArmchair(world, -3, 16.5, (-3 * Math.PI) / 4, mat(0x6a8a5a, { roughness: 1 }));
   // Scattered toy blocks: solid, and small enough to hop onto.
   const toyColors = [0xe8434b, 0x3fa7e0, 0x8fd14f, 0xf2b630];
   for (let i = 0; i < 6; i++) {
@@ -178,7 +176,7 @@ function buildStudy(world) {
   ];
   for (const [bx, bz, top] of steps) world.addBox(bx, bz, 1.6, 1.6, top, texturedMat('cardboard', 1, top), { blocksCamera: top > 2 });
 
-  couch(world, 6, 12, 3.6, 3.4, 's', mat(0x6a8a5a, { roughness: 1 })); // armchair: hide underneath
+  cornerArmchair(world, 3, 16.5, (3 * Math.PI) / 4, mat(0x6a8a5a, { roughness: 1 })); // armchair in the corner: hide underneath
   // The ragdoll's bed.
   world.addCollider(17, 7, 2.6, 2.6, 0.4);
   const cushion = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.3, 0.4, 24), mat(0x8a7ac8, { roughness: 1 }));

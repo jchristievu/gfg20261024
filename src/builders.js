@@ -7,6 +7,27 @@ export function mat(color, extra = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
 }
 
+// CapsuleGeometry with texture V spread by arc length. The stock UVs give each
+// profile point an equal share, which squashes the straight middle and
+// stretches the caps.
+export function capsuleGeometry(radius, length, capSegments = 8, radialSegments = 16) {
+  const geo = new THREE.CapsuleGeometry(radius, length, capSegments, radialSegments);
+  const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+  const half = length / 2;
+  const total = Math.PI * radius + length;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const r = Math.hypot(pos.getX(i), pos.getZ(i));
+    let s;
+    if (y < -half) s = radius * Math.atan2(r, -(y + half));
+    else if (y > half) s = total - radius * Math.atan2(r, y - half);
+    else s = (radius * Math.PI) / 2 + (y + half);
+    uv.setY(i, s / total);
+  }
+  return geo;
+}
+
 // Triangular prism (gable) of the given footprint, ridge running along z.
 export function gableGeometry(width, height, depth) {
   const shape = new THREE.Shape();

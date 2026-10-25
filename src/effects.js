@@ -6,6 +6,10 @@ export const windTime = { value: 0 };
 // Make an instanced foliage material sway in the wind. Geometry must have its
 // base at y=0; the sway grows with height.
 export function addWind(material, strength = 0.08) {
+  material.userData.wind = true; // lets the AO and outline passes sway it in step
+  // The shader code differs by strength, but onBeforeCompile's source doesn't,
+  // so key compiled programs by strength too.
+  material.customProgramCacheKey = () => `wind${strength}`;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.windTime = windTime;
     shader.vertexShader = shader.vertexShader
@@ -20,6 +24,23 @@ export function addWind(material, strength = 0.08) {
           transformed.x += w * ${strength.toFixed(3)} * h * h;
           transformed.z += w * ${(strength * 0.5).toFixed(3)} * h * h;
         }`,
+      );
+  };
+  return material;
+}
+
+// Animate a water material's normal map: two copies of the ripple texture
+// drift in different directions so the surface shimmers instead of sliding.
+export function addRipples(material) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.windTime = windTime;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float windTime;')
+      .replace(
+        'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
+        `vec3 mapN = texture2D( normalMap, vNormalMapUv + windTime * vec2( 0.035, 0.02 ) ).xyz * 2.0 - 1.0;
+        mapN += texture2D( normalMap, vNormalMapUv * 1.6 + windTime * vec2( -0.03, 0.04 ) ).xyz * 2.0 - 1.0;
+        mapN.z *= 0.5;`,
       );
   };
   return material;

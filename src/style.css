@@ -217,6 +217,23 @@ body.gamepad #overlay-buttons button.focused {
   opacity: 1;
 }
 
+#fps {
+  position: fixed;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #e8f0e0;
+  font: 12px ui-monospace, Consolas, monospace;
+  pointer-events: none;
+  z-index: 20;
+}
+#fps.hidden {
+  display: none;
+}
+
 #toast {
   position: absolute;
   top: 30%;

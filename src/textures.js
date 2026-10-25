@@ -73,13 +73,16 @@ const GENERATORS = {
   path(ctx, w, h) {
     GENERATORS.dirt(ctx, w, h);
     const rng = makeRng(3);
-    const img = ctx.getImageData(0, 0, w, h);
-    for (let y = 0; y < h; y++) {
-      const wobble = Math.sin((y / h) * Math.PI * 2 * 3) * 0.04 + Math.sin((y / h) * Math.PI * 2 * 7) * 0.02;
-      for (let x = 0; x < w; x++) {
-        const u = Math.abs(x / w - 0.5) * 2 + wobble; // 0 center, 1 edge
+    // Pixel loop, so use the real canvas size rather than the drawing units.
+    const pw = ctx.canvas.width;
+    const ph = ctx.canvas.height;
+    const img = ctx.getImageData(0, 0, pw, ph);
+    for (let y = 0; y < ph; y++) {
+      const wobble = Math.sin((y / ph) * Math.PI * 2 * 3) * 0.04 + Math.sin((y / ph) * Math.PI * 2 * 7) * 0.02;
+      for (let x = 0; x < pw; x++) {
+        const u = Math.abs(x / pw - 0.5) * 2 + wobble; // 0 center, 1 edge
         const a = THREE.MathUtils.clamp((1 - u) / 0.35, 0, 1) * (0.85 + rng() * 0.15);
-        img.data[(y * w + x) * 4 + 3] = a * 255;
+        img.data[(y * pw + x) * 4 + 3] = a * 255;
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -272,6 +275,13 @@ const GENERATORS = {
     }
   },
 
+  mouseFur(ctx, w, h) {
+    const rng = makeRng(19);
+    ctx.fillStyle = '#9a8f88';
+    ctx.fillRect(0, 0, w, h);
+    streaks(ctx, w, h, rng, ['#a89d96', '#8b817a', '#b3a9a2', '#857b74'], 1600, 8, 1, 0.4);
+  },
+
   ragdollFur(ctx, w, h) {
     const rng = makeRng(14);
     ctx.fillStyle = '#ece0cc';
@@ -411,25 +421,140 @@ const GENERATORS = {
   },
 };
 
-const canvases = new Map();
+// Generators draw in TILE units onto a canvas SCALE times larger, for sharper detail.
+const TILE = 256;
+const SCALE = 2;
 
-// A tiling texture for `name`, repeated repeatX x repeatY times across the UVs.
-export function texture(name, repeatX = 1, repeatY = 1) {
+// How strongly each texture's light/dark pattern reads as surface relief:
+// dark grooves (mortar, board gaps, bark furrows) sink in. Unlisted = flat.
+const BUMP = {
+  grass: 0.5,
+  dirt: 1,
+  planks: 1,
+  shingles: 2,
+  siding: 1.5,
+  stone: 2.5,
+  straw: 0.8,
+  hay: 0.8,
+  crate: 1,
+  cardboard: 0.3,
+  metal: 0.3,
+  bark: 2.5,
+  wood: 0.8,
+  woodFloor: 0.8,
+  wallpaper: 0.3,
+  tile: 1,
+  rug: 0.6,
+  catFur: 0.5,
+  mouseFur: 0.4,
+  grayFur: 0.5,
+  ragdollFur: 0.5,
+  pointerCoat: 0.3,
+};
+
+// Three's bump mapping normalizes screen-space slopes that can be zero (surfaces
+// seen edge-on), giving NaN pixels that bloom then smears into black blocks.
+// Fall back to the unbumped normal there.
+THREE.ShaderChunk.bumpmap_pars_fragment = THREE.ShaderChunk.bumpmap_pars_fragment
+  .replace(
+    /vec3 vSigmaX = normalize\( dFdx\( surf_pos\.xyz \) \);\s*vec3 vSigmaY = normalize\( dFdy\( surf_pos\.xyz \) \);/,
+    `vec3 vSigmaX = dFdx( surf_pos.xyz );
+    vec3 vSigmaY = dFdy( surf_pos.xyz );
+    if ( dot( vSigmaX, vSigmaX ) < 1e-20 || dot( vSigmaY, vSigmaY ) < 1e-20 ) return surf_norm;
+    vSigmaX = normalize( vSigmaX );
+    vSigmaY = normalize( vSigmaY );`,
+  )
+  .replace(
+    'return normalize( abs( fDet ) * surf_norm - vGrad );',
+    'vec3 bumped = abs( fDet ) * surf_norm - vGrad;\n\t\treturn dot( bumped, bumped ) > 1e-20 ? normalize( bumped ) : surf_norm;',
+  );
+
+const canvases = new Map();
+const heightCanvases = new Map();
+
+function tileCanvas(name) {
   if (!canvases.has(name)) {
     const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    GENERATORS[name](c.getContext('2d'), c.width, c.height);
+    c.width = c.height = TILE * SCALE;
+    const ctx = c.getContext('2d');
+    ctx.scale(SCALE, SCALE);
+    GENERATORS[name](ctx, TILE, TILE);
     canvases.set(name, c);
   }
-  const t = new THREE.CanvasTexture(canvases.get(name));
+  return canvases.get(name);
+}
+
+// Grayscale, slightly softened copy of a tile for use as a bump map.
+function heightCanvas(name) {
+  if (!heightCanvases.has(name)) {
+    const src = tileCanvas(name);
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    const ctx = c.getContext('2d');
+    ctx.filter = 'grayscale(1) blur(1px)';
+    ctx.drawImage(src, 0, 0);
+    heightCanvases.set(name, c);
+  }
+  return heightCanvases.get(name);
+}
+
+function wrap(canvas, repeatX, repeatY) {
+  const t = new THREE.CanvasTexture(canvas);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeatX, repeatY);
-  t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
   return t;
 }
 
+// A tiling texture for `name`, repeated repeatX x repeatY times across the UVs.
+export function texture(name, repeatX = 1, repeatY = 1) {
+  const t = wrap(tileCanvas(name), repeatX, repeatY);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Tileable ripple normal map for water: a sum of waves with whole-number
+// frequencies (so the tile wraps), turned into normals from its slope.
+let waterCanvas = null;
+export function waterNormals(repeat = 1) {
+  if (!waterCanvas) {
+    const n = 256;
+    const rng = makeRng(21);
+    const waves = [];
+    for (let i = 0; i < 14; i++) {
+      const k = 2 + Math.floor(rng() * 9);
+      const a = rng() * Math.PI * 2;
+      waves.push({ kx: Math.round(Math.cos(a) * k), ky: Math.round(Math.sin(a) * k), amp: 1 / k, phase: rng() * Math.PI * 2 });
+    }
+    waterCanvas = document.createElement('canvas');
+    waterCanvas.width = waterCanvas.height = n;
+    const ctx = waterCanvas.getContext('2d');
+    const img = ctx.createImageData(n, n);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        let dx = 0;
+        let dy = 0;
+        for (const w of waves) {
+          const c = Math.cos(((w.kx * x + w.ky * y) / n) * Math.PI * 2 + w.phase) * w.amp;
+          dx += c * w.kx;
+          dy += c * w.ky;
+        }
+        const len = Math.hypot(dx * 0.15, dy * 0.15, 1);
+        const i = (y * n + x) * 4;
+        img.data[i] = (-dx * 0.15 / len * 0.5 + 0.5) * 255;
+        img.data[i + 1] = (-dy * 0.15 / len * 0.5 + 0.5) * 255;
+        img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  return wrap(waterCanvas, repeat, repeat);
+}
+
 // Material with a procedural texture. Textures multiply `color`, so default to white.
 export function texturedMat(name, repeatX = 1, repeatY = 1, extra = {}) {
-  return new THREE.MeshStandardMaterial({ map: texture(name, repeatX, repeatY), roughness: 0.9, ...extra });
+  const relief = BUMP[name] ? { bumpMap: wrap(heightCanvas(name), repeatX, repeatY), bumpScale: BUMP[name] } : {};
+  return new THREE.MeshStandardMaterial({ map: texture(name, repeatX, repeatY), roughness: 0.9, ...relief, ...extra });
 }

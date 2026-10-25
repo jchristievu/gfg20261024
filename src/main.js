@@ -9,6 +9,8 @@ import { Hud } from './hud.js';
 import { Sky, SKY } from './sky.js';
 import { Effects, windTime } from './effects.js';
 import { LEVELS, unlockedLevel, unlockLevel } from './levels/index.js';
+import { Graphics, QUALITY } from './graphics.js';
+import { STYLES, applyStyle, styleVariants } from './stylize.js';
 
 const FOOD_NAMES = {
   cheese: { title: 'Cheese', noun: 'cheese' },
@@ -24,19 +26,65 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.0;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
 const cam = new ThirdPersonCamera(camera);
 const input = new Input(renderer.domElement, (dx, dy) => cam.look(dx, dy));
 const hud = new Hud();
+const gfx = new Graphics(renderer, camera);
+
+// Graphics quality, art style and the FPS readout, remembered between visits.
+const QUALITY_KEY = 'farmMouse.quality';
+const STYLE_KEY = 'farmMouse.style';
+const FPS_KEY = 'farmMouse.fps';
+try {
+  gfx.setQuality(localStorage.getItem(QUALITY_KEY) ?? 'high');
+  gfx.setStyle(localStorage.getItem(STYLE_KEY));
+  gfx.showFps = localStorage.getItem(FPS_KEY) === '1';
+} catch {
+  gfx.setQuality('high');
+}
+function setStyle(name) {
+  gfx.setStyle(name);
+  applyStyle(g.scene, gfx.style);
+  try {
+    localStorage.setItem(STYLE_KEY, gfx.style);
+  } catch {
+    // Storage unavailable.
+  }
+}
+function setQuality(name) {
+  gfx.setQuality(name);
+  gfx.applyShadowQuality(g.sun);
+  try {
+    localStorage.setItem(QUALITY_KEY, gfx.quality);
+  } catch {
+    // Storage unavailable.
+  }
+}
+function toggleFps() {
+  gfx.showFps = !gfx.showFps;
+  try {
+    localStorage.setItem(FPS_KEY, gfx.showFps ? '1' : '0');
+  } catch {
+    // Storage unavailable.
+  }
+}
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'F3') {
+    e.preventDefault();
+    toggleFps();
+    if (state === 'paused') redrawPause();
+  }
+});
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  gfx.setSize(window.innerWidth, window.innerHeight);
 });
 
 // The sun's shadow box follows the player, so a small box gives crisp shadows.
@@ -71,10 +119,15 @@ function placeSun(sun, focus) {
 function disposeScene(scene) {
   scene.traverse((o) => {
     o.geometry?.dispose();
-    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    // The original materials plus any style stand-ins made from them.
+    const own = o.userData.baseMaterial ?? o.material;
+    const mats = Array.isArray(own) ? own : own ? [own] : [];
     for (const m of mats) {
       m.map?.dispose();
+      m.bumpMap?.dispose();
+      m.normalMap?.dispose();
       m.dispose();
+      for (const v of styleVariants(m)) v.dispose();
     }
   });
   scene.environment?.dispose();
@@ -143,6 +196,7 @@ try {
 function setHead(style) {
   head = style;
   g.mouse.setHead(style);
+  applyStyle(g.scene, gfx.style); // style the new headwear
   try {
     localStorage.setItem(HEAD_KEY, style);
   } catch {
@@ -159,6 +213,7 @@ const nextOption = (options, current) => {
 function setTail(style) {
   tail = style;
   g.mouse.setTail(style);
+  applyStyle(g.scene, gfx.style); // style the new tail
   try {
     localStorage.setItem(TAIL_KEY, style);
   } catch {
@@ -186,6 +241,7 @@ function loadLevel(index) {
       : new THREE.HemisphereLight(0xfff2e0, 0x8a7060, 1.0),
   );
   const sun = makeSun(level.outdoor ? 2.6 : 1.6);
+  gfx.applyShadowQuality(sun);
   scene.add(sun, sun.target);
   for (const [x, y, z, intensity, color] of level.lights ?? []) {
     const light = new THREE.PointLight(color, intensity, 45, 1);
@@ -207,6 +263,8 @@ function loadLevel(index) {
   scene.add(noiseRing);
 
   g = { index, level, scene, sky, sun, world, mouse, enemies, effects, noiseRing, food: FOOD_NAMES[level.food] };
+  applyStyle(scene, gfx.style);
+  gfx.setScene(scene);
   lives = CONFIG.game.lives;
   delivered = 0;
   world.setFoodCount(world.foodToWin);
@@ -297,6 +355,7 @@ function updatePlaying(dt) {
     const dz = mouse.position.z - puddle.z;
     const d = Math.hypot(dx, dz) || 1;
     world.dropFood(puddle.x + (dx / d) * (puddle.r + 0.6), puddle.z + (dz / d) * (puddle.r + 0.6));
+    applyStyle(g.scene, gfx.style); // style the dropped food
     mouse.carrying = false;
     hud.toast(`Splash! You dropped the ${food.noun}.`);
   }
@@ -470,8 +529,31 @@ function pauseGame() {
         note: `${VIEWS[cam.view].label} (V / Y)`,
         onClick: () => {
           toggleView();
-          state = pausedFrom;
-          pauseGame(); // redraw the menu with the new setting
+          redrawPause();
+        },
+      },
+      {
+        label: 'Graphics',
+        note: `${QUALITY[gfx.quality].label} ▸`,
+        onClick: () => {
+          setQuality(nextOption(QUALITY, gfx.quality));
+          redrawPause();
+        },
+      },
+      {
+        label: 'Style',
+        note: `${STYLES[gfx.style].label}${STYLES[gfx.style].ink && !QUALITY[gfx.quality].post ? ' (outlines need Medium+)' : ''} ▸`,
+        onClick: () => {
+          setStyle(nextOption(STYLES, gfx.style));
+          redrawPause();
+        },
+      },
+      {
+        label: 'Show FPS',
+        note: gfx.showFps ? 'On (F3)' : 'Off (F3)',
+        onClick: () => {
+          toggleFps();
+          redrawPause();
         },
       },
       { label: 'Restart level', onClick: () => startLevel(g.index) },
@@ -480,6 +562,14 @@ function pauseGame() {
     '',
     { onBack: resumeGame },
   );
+}
+
+// Redraw the pause menu after changing a setting, keeping the controller highlight in place.
+function redrawPause() {
+  const focus = hud.focusIndex;
+  state = pausedFrom;
+  pauseGame();
+  if (focus >= 0 && document.body.classList.contains('gamepad')) hud.setFocus(focus);
 }
 
 function resumeGame() {
@@ -520,6 +610,9 @@ const startIndex = THREE.MathUtils.clamp((Number(params.get('level')) || 1) - 1,
 if (TAILS[params.get('tail')]) tail = params.get('tail'); // dev: preview a tail without saving it
 if (HEADS[params.get('head')]) head = params.get('head'); // dev: preview a head style without saving it
 if (params.get('controls') === 'gamepad') input.setScheme('gamepad'); // dev: preview controller UI
+if (QUALITY[params.get('gfx')]) gfx.setQuality(params.get('gfx')); // dev: try a quality without saving it
+if (params.has('fps')) gfx.showFps = true;
+if (STYLES[params.get('style')]) gfx.setStyle(params.get('style')); // dev: try a style without saving it
 if (params.has('level')) showLevelIntro(startIndex);
 else {
   loadLevel(0);
@@ -534,7 +627,7 @@ const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   input.poll(dt);
-  const { world, mouse, enemies, effects, noiseRing, sky, sun, scene } = g;
+  const { world, mouse, enemies, effects, noiseRing, sky, sun } = g;
 
   if (state === 'playing') {
     const look = input.lookAxes;
@@ -588,5 +681,5 @@ renderer.setAnimationLoop(() => {
     placeSun(sun, mouse.position);
   }
   sky.update(dt, camera);
-  renderer.render(scene, camera);
+  gfx.render(dt);
 });

@@ -1,6 +1,7 @@
 ﻿import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { texturedMat } from '../textures.js';
+import { capsuleGeometry } from '../builders.js';
 import { Creature, dist2d } from './creature.js';
 
 // Icon floating over the cat's head for each state.
@@ -23,7 +24,7 @@ const STYLES = {
     legLen: 0.5,
     headR: 0.27,
     tailR: 0.05,
-    fur: () => texturedMat('grayFur', 1, 2, { roughness: 1 }),
+    fur: () => texturedMat('grayFur', 1, 1, { roughness: 1 }),
     headFur: () => texturedMat('grayFur', 1, 1, { roughness: 1 }),
     accent: 0x7d838b, // ears, legs
     light: 0xf4f2ee, // chest, muzzle, paws
@@ -40,7 +41,7 @@ const STYLES = {
     legLen: 0.36,
     headR: 0.35,
     tailR: 0.11,
-    fur: () => texturedMat('ragdollFur', 1, 2, { roughness: 1 }),
+    fur: () => texturedMat('ragdollFur', 1, 1, { roughness: 1 }),
     headFur: () => texturedMat('ragdollFur', 1, 1, { roughness: 1 }),
     accent: 0x5a4434,
     light: 0xfbf7f0,
@@ -66,15 +67,15 @@ function buildModel(s) {
 
   const bodyY = s.legLen + s.bodyR * 0.6;
   const front = s.bodyLen / 2 + s.bodyR;
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(s.bodyR, s.bodyLen, 8, 16), fur);
+  const torso = new THREE.Mesh(capsuleGeometry(s.bodyR, s.bodyLen, 12, 28), fur);
   torso.rotation.x = Math.PI / 2;
   torso.position.y = bodyY;
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(s.bodyR * 0.85, 12, 10), light);
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(s.bodyR * 0.85, 24, 16), light);
   chest.scale.set(0.9, 0.95, 0.7);
   chest.position.set(0, bodyY - s.bodyR * 0.15, front - s.bodyR * 0.45);
   body.add(torso, chest);
   if (s.ruff) {
-    const ruff = new THREE.Mesh(new THREE.SphereGeometry(s.bodyR * 1.05, 14, 10), light);
+    const ruff = new THREE.Mesh(new THREE.SphereGeometry(s.bodyR * 1.05, 24, 16), light);
     ruff.scale.set(1.05, 1, 0.8);
     ruff.position.set(0, bodyY + s.bodyR * 0.25, front - s.bodyR * 0.6);
     body.add(ruff);
@@ -83,7 +84,7 @@ function buildModel(s) {
   const h = s.headR;
   const hc = new THREE.Vector3(0, bodyY + s.bodyR * 0.75 + h * 0.3, front + h * 0.45);
   const at = (x, y, z) => new THREE.Vector3(hc.x + x * h, hc.y + y * h, hc.z + z * h);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(h, 20, 14), s.headFur());
+  const head = new THREE.Mesh(new THREE.SphereGeometry(h, 32, 22), s.headFur());
   head.rotation.x = -Math.PI / 2; // stripes run over the top of the head
   head.position.copy(hc);
   body.add(head);
@@ -93,7 +94,7 @@ function buildModel(s) {
     mask.position.copy(at(0, 0.1, 0.55));
     body.add(mask);
   }
-  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(h * 0.47, 12, 8), light);
+  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(h * 0.47, 20, 14), light);
   muzzle.scale.set(1.3, 0.8, 0.8);
   muzzle.position.copy(at(0, -0.25, 0.81));
   const nose = new THREE.Mesh(new THREE.SphereGeometry(h * 0.12, 8, 6), pink);
@@ -127,7 +128,7 @@ function buildModel(s) {
   for (const [x, z] of [[-lx, lz], [lx, lz], [-lx, -lz], [lx, -lz]]) {
     const hip = new THREE.Group();
     hip.position.set(x, s.legLen, z);
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(s.bodyR * 0.26, s.bodyR * 0.22, s.legLen, 8), accent);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(s.bodyR * 0.26, s.bodyR * 0.22, s.legLen, 14), accent);
     leg.position.y = -s.legLen / 2;
     const paw = new THREE.Mesh(new THREE.SphereGeometry(s.bodyR * 0.3, 10, 8), light);
     paw.scale.set(1, 0.6, 1.25);
@@ -147,7 +148,7 @@ function buildModel(s) {
     new THREE.Vector3(0, 0.95, -0.28),
   ]);
   const tailMat = s.mask ? accent : texturedMat(s === STYLES.farm ? 'grayFur' : 'ragdollFur', 3, 1);
-  tail.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 20, s.tailR, 8), tailMat));
+  tail.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, s.tailR, 12), tailMat));
   const tip = new THREE.Mesh(new THREE.SphereGeometry(s.tailR * 1.05, 8, 6), new THREE.MeshStandardMaterial({ color: s.tailTip, roughness: 1 }));
   tip.position.set(0, 0.95, -0.28);
   tail.add(tip);
@@ -307,6 +308,10 @@ export class Cat extends Creature {
         else if (!this.wanderPoint || this.moveToward(this.wanderPoint, C.wanderSpeed, dt)) {
           if (this.wanderPoint) this.prowlPause = C.prowlPause[0] + Math.random() * (C.prowlPause[1] - C.prowlPause[0]);
           this.pickWanderPoint();
+        } else {
+          // Pressing into a wall, or taking far too long: it can't get there, so go somewhere else.
+          this.wanderStall = this.speedThisFrame < C.wanderSpeed * 0.3 ? this.wanderStall + dt : 0;
+          if ((this.wanderTimer -= dt) <= 0 || this.wanderStall > 1.2) this.pickWanderPoint();
         }
         break;
 
@@ -422,8 +427,16 @@ export class Cat extends Creature {
     this.searchPointTimer = 3;
   }
 
-  // Prowl somewhere nearby (or along its patrol corridor), but not around the mouse hole.
   pickWanderPoint() {
+    this.chooseWanderPoint();
+    // Time allowed to get there: a generous multiple of the straight-line walk,
+    // since detours around long walls can add a lot.
+    this.wanderTimer = 5 + (dist2d(this.position, this.wanderPoint) / this.p.wanderSpeed) * 4;
+    this.wanderStall = 0;
+  }
+
+  // Prowl somewhere nearby (or along its patrol corridor), but not around the mouse hole.
+  chooseWanderPoint() {
     const home = this.world.home;
     if (this.patrol) {
       const { from, to, width } = this.patrol;
@@ -444,9 +457,12 @@ export class Cat extends Creature {
         return;
       }
     }
-    for (let i = 0; i < 10; i++) {
+    // Mostly prowl to spots in plain reach; now and then head somewhere round a wall (another room).
+    const roam = Math.random() < 0.35;
+    for (let i = 0; i < 16; i++) {
       const p = this.randomPointNear(this.position.x, this.position.z, 4, 12, 1);
-      if (p && Math.hypot(p.x - home.x, p.z - home.z) >= this.p.butterflyHomeClearance) {
+      if (!p || (!roam && i < 12 && this.world.steer(this.position, p, this.radius) !== p)) continue;
+      if (Math.hypot(p.x - home.x, p.z - home.z) >= this.p.butterflyHomeClearance) {
         this.wanderPoint = p;
         return;
       }

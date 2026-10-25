@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { texturedMat } from './textures.js';
 
 const M = CONFIG.mouse;
 
@@ -206,25 +207,25 @@ function buildModel() {
   const body = new THREE.Group(); // bobs while running
   root.add(body);
 
-  const fur = new THREE.MeshStandardMaterial({ color: 0x9a8f88, roughness: 1 });
+  const fur = texturedMat('mouseFur', 2, 2, { roughness: 1 });
   const pink = new THREE.MeshStandardMaterial({ color: 0xe8a0a8, roughness: 0.8 });
   const black = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3 });
 
-  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 12), fur);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.25, 32, 24), fur);
   torso.scale.set(0.9, 0.75, 1.3);
   torso.position.y = 0.2;
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), fur);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 32, 24), fur);
   head.scale.set(1, 0.95, 1.2);
   head.position.set(0, 0.28, 0.33);
 
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), pink);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 10), pink);
   nose.position.set(0, 0.27, 0.51);
 
   body.add(torso, head, nose);
 
   const belly = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 16, 12),
+    new THREE.SphereGeometry(0.2, 32, 24),
     new THREE.MeshStandardMaterial({ color: 0xd9cfc4, roughness: 1 }),
   );
   belly.scale.set(0.85, 0.6, 1.1);
@@ -236,13 +237,13 @@ function buildModel() {
   const earInner = new THREE.MeshStandardMaterial({ color: 0xf2b8c0, roughness: 0.8 });
   const ears = []; // hidden when a head style replaces them (cat ears)
   for (const side of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), fur);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.09, 24, 16), fur);
     ear.scale.set(1, 1, 0.3);
     ear.position.set(side * 0.1, 0.42, 0.28);
-    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 8), earInner);
+    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.065, 24, 16), earInner);
     inner.scale.set(1, 1, 0.3);
     inner.position.set(side * 0.1, 0.415, 0.295);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), black);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 16, 12), black);
     eye.position.set(side * 0.07, 0.32, 0.45);
     const glint = new THREE.Mesh(new THREE.SphereGeometry(0.008, 6, 4), shine);
     glint.position.set(side * 0.075, 0.33, 0.475);

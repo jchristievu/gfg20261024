@@ -2,6 +2,8 @@
 
 A third-person 3D browser game built with [Three.js](https://threejs.org/) and Vite. You're a mouse on a farm: sneak out, grab food, and carry it back to your hole without getting caught. Four levels, each with its own hunters and hazards.
 
+**Play it online: https://jchristievu.github.io/gfg20261024/** (desktop browser with keyboard and mouse, or an Xbox controller).
+
 ## Running it
 
 ```sh
@@ -10,7 +12,9 @@ npm run dev      # then open the URL Vite prints (usually http://localhost:5173)
 npm run build    # production build into dist/
 ```
 
-Dev URL options: `?level=N` jumps straight to a level. `?tail=curly` (or `straight`, `short`, `triple`, `fox`, `finger`, `fireball`) previews a tail without saving it; `?head=tophat` (or `normal`, `cap`, `monocle`, `catears`) does the same for head styles. `?controls=gamepad` shows the controller UI without a controller. `?shot` hides the menu for screenshots, and `?shot=x,y,z,tx,ty,tz` also places the camera at `x,y,z` looking at `tx,ty,tz`.
+Every push to `main` rebuilds the game and publishes it to GitHub Pages ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)). The repo's Pages source must be set to **GitHub Actions** (Settings → Pages).
+
+Dev URL options: `?level=N` jumps straight to a level. `?tail=curly` (or `straight`, `short`, `triple`, `fox`, `finger`, `fireball`) previews a tail without saving it; `?head=tophat` (or `normal`, `cap`, `monocle`, `catears`) does the same for head styles. `?controls=gamepad` shows the controller UI without a controller. `?shot` hides the menu for screenshots, and `?shot=x,y,z,tx,ty,tz` also places the camera at `x,y,z` looking at `tx,ty,tz`. `?gfx=low` (or `medium`, `high`) tries a graphics quality without saving it, `?style=cel` (or `basic`, `ink`, `toon`) does the same for the art style, and `?fps` shows the frame-rate readout.
 
 ## How to play
 
@@ -29,6 +33,24 @@ Beat a level to unlock the next. Progress is saved in your browser, and you can 
 | Esc | Start | Pause (Start also resumes) |
 | V | Y | Camera view: Standard, or High (pulled back and locked at a high angle; remembered) |
 | Mouse click | D-pad / left stick, A, B | Menus (B goes back) |
+| F3 | | Show or hide the FPS and draw-call readout |
+
+**Graphics** (pause menu) sets the quality, and the game remembers it:
+
+- **High** (default): ambient occlusion (soft contact shadows), bloom, anti-aliasing, color grading and a sharper sun shadow.
+- **Medium**: drops ambient occlusion and renders at a lower resolution on high-DPI screens.
+- **Low**: skips post-processing entirely, for older or integrated graphics.
+
+If the game feels choppy, turn on the FPS readout and step the quality down.
+
+**Style** (pause menu) picks the art style, also remembered, and switches instantly:
+
+- **Basic**: the standard lit, textured look.
+- **Ink**: Basic plus cartoon ink outlines.
+- **Toon**: cel shading in three light bands, textures kept, with outlines.
+- **Cel**: flat colors with cel shading and outlines, for a clean cartoon look.
+
+Outlines are a screen effect, so Ink, Toon and Cel draw them only on Medium or High graphics. On Low, Toon and Cel keep their shading without the outlines.
 
 Controllers work in Chrome and Edge through the browser's Gamepad API, wired or Bluetooth. Browsers only reveal a controller after you press a button on it. You can switch between keyboard/mouse and controller at any time, and the on-screen hints follow whichever you used last. Rumble plays when you're caught or a trap snaps. Name entry needs a keyboard; on a controller, use the Random name button.
 
@@ -89,6 +111,8 @@ Candy from on top of the tall bookcase in the study, on the farmhouse's second f
 | --- | --- |
 | [src/config.js](src/config.js) | All gameplay tuning: speeds, senses, timers, lives, per-enemy profiles |
 | [src/main.js](src/main.js) | Renderer, level loading, game loop, menus and progression |
+| [src/graphics.js](src/graphics.js) | Quality presets, post-processing (AO, bloom, color grade) and the FPS readout |
+| [src/stylize.js](src/stylize.js) | Art styles: toon / flat-cel material swaps and the ink-outline pass |
 | [src/levels/](src/levels/) | One file per level (layout, food, enemies), plus `index.js` with the level list and unlock state |
 | [src/world.js](src/world.js) | Shared level engine: collision, hiding spots, food, home, traps, enemy steering and line of sight |
 | [src/builders.js](src/builders.js) | Shared building helpers (roofs, materials) and food models |
@@ -100,7 +124,7 @@ Candy from on top of the tall bookcase in the study, on the farmhouse's second f
 | [src/camera.js](src/camera.js) | Third-person orbit camera |
 | [src/input.js](src/input.js) | Keyboard, pointer-lock mouse and gamepad input, merged into one set of controls |
 | [src/hud.js](src/hud.js) | On-screen HUD and menus |
-| [src/textures.js](src/textures.js) | Procedural canvas textures (no image assets) |
+| [src/textures.js](src/textures.js) | Procedural canvas textures and bump maps, water ripple normals (no image assets) |
 | [src/sky.js](src/sky.js) | Sky dome, clouds, environment lighting |
 | [src/decor.js](src/decor.js) | Scattered grass tufts, flowers, rocks |
 | [src/effects.js](src/effects.js) | Wind sway, dust, splashes, ripples |

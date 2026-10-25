@@ -16,7 +16,7 @@ function buildChicken({ scale = 1, body, wing, rooster = false }) {
   const red = std(0xd42a1e, { roughness: 0.6 });
   const yellow = std(0xf2b630, { roughness: 0.6 });
 
-  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 12), bodyMat);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.38, 28, 20), bodyMat);
   torso.scale.set(0.85, 0.9, 1.15);
   torso.position.y = 0.85;
   bodyGroup.add(torso);
@@ -25,7 +25,7 @@ function buildChicken({ scale = 1, body, wing, rooster = false }) {
   for (const s of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(s * 0.28, 0.95, 0);
-    const w = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8), wingMat);
+    const w = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 14), wingMat);
     w.scale.set(0.3, 0.7, 1.1);
     w.position.set(s * 0.04, -0.08, -0.05);
     pivot.add(w);
@@ -37,10 +37,10 @@ function buildChicken({ scale = 1, body, wing, rooster = false }) {
   const head = new THREE.Group();
   head.position.set(0, 1.12, 0.3);
   bodyGroup.add(head);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.35, 10), rooster ? std(0xd98b2b) : bodyMat);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.35, 16), rooster ? std(0xd98b2b) : bodyMat);
   neck.position.set(0, 0.05, 0);
   neck.rotation.x = 0.35;
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), rooster ? std(0xd98b2b) : bodyMat);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.14, 20, 16), rooster ? std(0xd98b2b) : bodyMat);
   skull.position.set(0, 0.25, 0.06);
   const beak = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 6), yellow);
   beak.rotation.x = Math.PI / 2;

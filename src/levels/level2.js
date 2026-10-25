@@ -127,6 +127,55 @@ export function couch(world, cx, cz, w, d, back, fabric) {
   world.addHideZone(cx - w / 2 + 0.45, cx + w / 2 - 0.45, cz - d / 2 + 0.45, cz + d / 2 - 0.45);
 }
 
+// The armchair from couch(), turned to face `yaw` (radians; 0 faces +z) so it
+// can sit angled in a corner. Colliders are axis-aligned, so the angled shape
+// is approximated: seat, backrest and arms each get a box inside their outline.
+export function cornerArmchair(world, cx, cz, yaw, fabric, { w = 3.6, d = 3.4 } = {}) {
+  const clear = 0.6;
+  const wood = texturedMat('wood', 1, 1, { color: 0x5a3a24 });
+  const cushionMat = mat(new THREE.Color(fabric.color).offsetHSL(0, 0, 0.05).getHex(), { roughness: 1 });
+  const group = new THREE.Group();
+  group.position.set(cx, 0, cz);
+  group.rotation.y = yaw;
+  world.scene.add(group);
+  // Local layout, seat facing +z.
+  const part = (lx, lz, pw, pd, h, y, material) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(pw, h, pd), material);
+    mesh.position.set(lx, y + h / 2, lz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  };
+  const toWorld = (lx, lz) => new THREE.Vector3(lx, 0, lz).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(group.position);
+  const collider = (lx, lz, size, top, bottom) => {
+    const p = toWorld(lx, lz);
+    world.addCollider(p.x, p.z, size, size, top, bottom ? { bottom } : {});
+  };
+
+  const lx = w / 2 - 0.2;
+  const lz = d / 2 - 0.2;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      part(sx * lx, sz * lz, 0.3, 0.3, clear, 0, wood);
+      collider(sx * lx, sz * lz, 0.3, clear);
+    }
+  }
+  const b = 0.9;
+  part(0, 0, w, d, 1.0, clear, fabric); // base
+  part(0, -d / 2 + b / 2, w, b, 2.7, clear, fabric); // backrest
+  for (const s of [-1, 1]) part(s * (w / 2 - 0.4), 0, 0.8, d, 1.7, clear, fabric); // arms
+  part(0, b / 2 - 0.25, w - 1.8, d - 1.4, 0.35, clear + 1.0, cushionMat); // seat cushion
+
+  // Collision: the seat block, a block in the middle of the backrest, one per arm.
+  const inner = Math.min(w, d) / Math.SQRT2;
+  collider(0, 0.2, inner, clear + 1.0, clear);
+  collider(0, -d / 2 + b / 2, 1.2, clear + 2.7, clear);
+  for (const s of [-1, 1]) collider(s * (w / 2 - 0.4), 0, 0.8, clear + 1.7, clear);
+  // Hide underneath: the square that fits inside the angled footprint.
+  const h = inner / 2 - 0.3;
+  world.addHideZone(cx - h, cx + h, cz - h, cz + h);
+}
+
 export function table(world, cx, cz, w, d, height, material) {
   const thick = 0.25;
   world.addBox(cx, cz, w, d, thick, material, { y: height - thick });
